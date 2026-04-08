@@ -2,7 +2,9 @@ package com.studyflow.ai.config;
 
 import com.studyflow.ai.gateway.EmbeddingGateway;
 import com.studyflow.ai.gateway.ExternalEmbeddingGateway;
+import com.studyflow.ai.gateway.LangChain4jEmbeddingGateway;
 import com.studyflow.ai.gateway.MockEmbeddingGateway;
+import dev.langchain4j.model.embedding.EmbeddingModel;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -15,6 +17,12 @@ public class EmbeddingGatewayConfig {
     @ConditionalOnProperty(name = "studyflow.embedding.provider", havingValue = "mock", matchIfMissing = true)
     public EmbeddingGateway mockEmbeddingGateway(EmbeddingProperties embeddingProperties) {
         return new MockEmbeddingGateway(embeddingProperties);
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "studyflow.embedding.provider", havingValue = "langchain4j")
+    public EmbeddingGateway langChain4jEmbeddingGateway(EmbeddingModel embeddingModel) {
+        return new LangChain4jEmbeddingGateway(embeddingModel);
     }
 
     @Bean

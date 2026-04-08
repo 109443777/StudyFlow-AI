@@ -84,6 +84,10 @@ studyflow:
     embedding-model: ${AI_EMBEDDING_MODEL:}
     api-key: ${AI_API_KEY:}
     base-url: ${AI_BASE_URL:}
+    timeout: ${AI_TIMEOUT:30s}
+    max-retries: ${AI_MAX_RETRIES:2}
+    log-requests: ${AI_LOG_REQUESTS:false}
+    log-responses: ${AI_LOG_RESPONSES:false}
   ai:
     provider: ${STUDYFLOW_AI_PROVIDER:mock}
     external:
