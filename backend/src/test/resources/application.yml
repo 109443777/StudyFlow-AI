@@ -22,6 +22,7 @@ spring:
         - classpath:sql/008_material_chunk.sql
         - classpath:sql/009_qa_session.sql
         - classpath:sql/010_qa_message.sql
+        - classpath:sql/011_study_plan.sql
 
 studyflow:
   jwt:
