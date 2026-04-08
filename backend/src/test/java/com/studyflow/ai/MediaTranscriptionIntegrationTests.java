@@ -1,6 +1,7 @@
 package com.studyflow.ai;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
@@ -142,7 +143,7 @@ class MediaTranscriptionIntegrationTests {
         org.junit.jupiter.api.Assertions.assertNotNull(materialContent);
         org.junit.jupiter.api.Assertions.assertTrue(materialContent.getCleanedText().contains("audio preview for data structures"));
 
-        verify(parseTaskMessagePublisher, times(2)).publish(any(), any());
+        verify(parseTaskMessagePublisher, times(1)).publish(any(), eq(ParseTaskTypeEnum.AI_SUMMARY));
 
         mockMvc.perform(get("/api/media-transcripts")
                         .param("materialId", String.valueOf(material.getId()))
@@ -174,10 +175,10 @@ class MediaTranscriptionIntegrationTests {
 
         List<ParseTask> tasks = parseTaskMapper.selectList(Wrappers.<ParseTask>lambdaQuery()
                 .eq(ParseTask::getMaterialId, material.getId()));
-        org.junit.jupiter.api.Assertions.assertEquals(3, tasks.size());
+        org.junit.jupiter.api.Assertions.assertEquals(2, tasks.size());
         org.junit.jupiter.api.Assertions.assertTrue(tasks.stream()
                 .anyMatch(task -> ParseTaskTypeEnum.AI_SUMMARY.name().equals(task.getTaskType())));
-        org.junit.jupiter.api.Assertions.assertTrue(tasks.stream()
+        org.junit.jupiter.api.Assertions.assertFalse(tasks.stream()
                 .anyMatch(task -> ParseTaskTypeEnum.EMBEDDING.name().equals(task.getTaskType())));
         org.junit.jupiter.api.Assertions.assertEquals(ParseTaskStatusEnum.SUCCESS.name(),
                 parseTaskMapper.selectById(parseTask.getId()).getStatus());

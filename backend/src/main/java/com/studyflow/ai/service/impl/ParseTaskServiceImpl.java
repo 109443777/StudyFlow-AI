@@ -79,6 +79,8 @@ public class ParseTaskServiceImpl implements ParseTaskService {
             markTaskSuccess(parseTask);
             if (isInitialTask(parseTask)) {
                 createAndDispatchFollowUpTask(material, ParseTaskTypeEnum.AI_SUMMARY);
+            }
+            if (ParseTaskTypeEnum.AI_SUMMARY.name().equals(parseTask.getTaskType())) {
                 createAndDispatchFollowUpTask(material, ParseTaskTypeEnum.EMBEDDING);
             }
             refreshMaterialParseStatus(material.getId());

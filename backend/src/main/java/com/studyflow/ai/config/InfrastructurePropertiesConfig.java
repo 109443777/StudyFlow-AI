@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Configuration;
 @EnableConfigurationProperties({
         MinioProperties.class,
         LangChainProperties.class,
+        AiProperties.class,
         JwtProperties.class,
         UploadProperties.class,
         TranscriptionProperties.class

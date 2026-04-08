@@ -5,6 +5,7 @@ import com.studyflow.ai.enums.ParseTaskTypeEnum;
 import com.studyflow.ai.service.MaterialContentService;
 import com.studyflow.ai.service.MediaTranscriptService;
 import com.studyflow.ai.service.MaterialTaskExecutionService;
+import com.studyflow.ai.service.StudyContentAiService;
 import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -17,6 +18,8 @@ public class MaterialTaskExecutionServiceImpl implements MaterialTaskExecutionSe
     private final MaterialContentService materialContentService;
 
     private final MediaTranscriptService mediaTranscriptService;
+
+    private final StudyContentAiService studyContentAiService;
 
     @Override
     public void execute(Material material, ParseTaskTypeEnum taskType) {
@@ -31,7 +34,11 @@ public class MaterialTaskExecutionServiceImpl implements MaterialTaskExecutionSe
                 log.info("Media transcription completed successfully, materialId={}, taskType={}",
                         material.getId(), taskType);
             }
-            case AI_SUMMARY, EMBEDDING ->
+            case AI_SUMMARY -> {
+                studyContentAiService.analyzeAndSave(material);
+                log.info("AI study content analysis completed successfully, materialId={}", material.getId());
+            }
+            case EMBEDDING ->
                     log.info("Execute placeholder task, taskType={}, materialId={}, objectKey={}",
                             taskType, material.getId(), material.getObjectKey());
         }

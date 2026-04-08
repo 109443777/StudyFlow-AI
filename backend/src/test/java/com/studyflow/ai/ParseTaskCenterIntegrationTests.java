@@ -154,10 +154,10 @@ class ParseTaskCenterIntegrationTests {
 
         List<ParseTask> tasks = parseTaskMapper.selectList(Wrappers.<ParseTask>lambdaQuery()
                 .eq(ParseTask::getMaterialId, materialId));
-        org.junit.jupiter.api.Assertions.assertEquals(3, tasks.size());
+        org.junit.jupiter.api.Assertions.assertEquals(2, tasks.size());
         org.junit.jupiter.api.Assertions.assertEquals(ParseTaskStatusEnum.SUCCESS.name(),
                 parseTaskMapper.selectById(initialTask.getId()).getStatus());
-        verify(parseTaskMessagePublisher, times(2)).publish(any(), any());
+        verify(parseTaskMessagePublisher, times(1)).publish(any(), eq(ParseTaskTypeEnum.AI_SUMMARY));
 
         Material material = materialMapper.selectById(materialId);
         org.junit.jupiter.api.Assertions.assertEquals(MaterialParseStatusEnum.PARSING.name(), material.getParseStatus());
@@ -168,13 +168,24 @@ class ParseTaskCenterIntegrationTests {
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.length()").value(2));
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].taskType").value("AI_SUMMARY"));
 
-        for (ParseTask task : tasks) {
-            if (!task.getId().equals(initialTask.getId())) {
-                parseTaskService.processTask(task.getId());
-            }
-        }
+        ParseTask aiSummaryTask = tasks.stream()
+                .filter(task -> ParseTaskTypeEnum.AI_SUMMARY.name().equals(task.getTaskType()))
+                .findFirst()
+                .orElseThrow();
+
+        reset(parseTaskMessagePublisher);
+        doNothing().when(parseTaskMessagePublisher).publish(any(), any());
+        parseTaskService.processTask(aiSummaryTask.getId());
+        verify(parseTaskMessagePublisher, times(1)).publish(any(), eq(ParseTaskTypeEnum.EMBEDDING));
+
+        ParseTask embeddingTask = parseTaskMapper.selectOne(Wrappers.<ParseTask>lambdaQuery()
+                .eq(ParseTask::getMaterialId, materialId)
+                .eq(ParseTask::getTaskType, ParseTaskTypeEnum.EMBEDDING.name())
+                .last("limit 1"));
+        parseTaskService.processTask(embeddingTask.getId());
 
         List<ParseTask> completedTasks = parseTaskMapper.selectList(Wrappers.<ParseTask>lambdaQuery()
                 .eq(ParseTask::getMaterialId, materialId));

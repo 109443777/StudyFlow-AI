@@ -84,6 +84,12 @@ studyflow:
     embedding-model: ${AI_EMBEDDING_MODEL:}
     api-key: ${AI_API_KEY:}
     base-url: ${AI_BASE_URL:}
+  ai:
+    provider: ${STUDYFLOW_AI_PROVIDER:mock}
+    external:
+      base-url: ${STUDYFLOW_AI_BASE_URL:}
+      api-key: ${STUDYFLOW_AI_API_KEY:}
+      model: ${STUDYFLOW_AI_MODEL:}
   transcription:
     provider: ${TRANSCRIPTION_PROVIDER:mock}
     mock-prefix: ${TRANSCRIPTION_MOCK_PREFIX:[Mock Transcript]}

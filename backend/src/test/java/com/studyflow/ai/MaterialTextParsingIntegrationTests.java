@@ -1,6 +1,7 @@
 package com.studyflow.ai;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
@@ -148,7 +149,7 @@ class MaterialTextParsingIntegrationTests {
         org.junit.jupiter.api.Assertions.assertEquals(ParseTaskStatusEnum.SUCCESS.name(), updatedTask.getStatus());
         org.junit.jupiter.api.Assertions.assertEquals(MaterialParseStatusEnum.PARSING.name(),
                 materialMapper.selectById(material.getId()).getParseStatus());
-        verify(parseTaskMessagePublisher, times(2)).publish(any(), any());
+        verify(parseTaskMessagePublisher, times(1)).publish(any(), eq(ParseTaskTypeEnum.AI_SUMMARY));
 
         mockMvc.perform(get("/api/material-contents")
                         .param("materialId", String.valueOf(material.getId()))

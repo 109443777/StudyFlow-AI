@@ -18,6 +18,7 @@ spring:
         - classpath:sql/004_parse_task.sql
         - classpath:sql/005_material_content.sql
         - classpath:sql/006_media_transcript.sql
+        - classpath:sql/007_material_summary.sql
 
 studyflow:
   jwt:
@@ -27,6 +28,8 @@ studyflow:
     token-prefix: Bearer 
   upload:
     session-expire-hours: 24
+  ai:
+    provider: mock
   minio:
     endpoint:
     access-key:
