@@ -20,6 +20,7 @@ import com.studyflow.ai.entity.User;
 import com.studyflow.ai.enums.UserStatusEnum;
 import com.studyflow.ai.gateway.StorageGateway;
 import com.studyflow.ai.mapper.MaterialMapper;
+import com.studyflow.ai.mapper.ParseTaskMapper;
 import com.studyflow.ai.mapper.UploadSessionMapper;
 import com.studyflow.ai.mapper.UserMapper;
 import java.io.ByteArrayInputStream;
@@ -55,6 +56,9 @@ class ChunkUploadIntegrationTests {
     private MaterialMapper materialMapper;
 
     @Autowired
+    private ParseTaskMapper parseTaskMapper;
+
+    @Autowired
     private UploadSessionMapper uploadSessionMapper;
 
     @Autowired
@@ -70,6 +74,7 @@ class ChunkUploadIntegrationTests {
     @BeforeEach
     void setUp() throws Exception {
         objectStore.clear();
+        parseTaskMapper.delete(Wrappers.emptyWrapper());
         uploadSessionMapper.delete(Wrappers.emptyWrapper());
         materialMapper.delete(Wrappers.emptyWrapper());
         userMapper.delete(Wrappers.emptyWrapper());

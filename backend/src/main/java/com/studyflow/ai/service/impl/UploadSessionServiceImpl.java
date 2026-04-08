@@ -19,6 +19,7 @@ import com.studyflow.ai.gateway.StorageGateway;
 import com.studyflow.ai.mapper.MaterialMapper;
 import com.studyflow.ai.mapper.UploadSessionMapper;
 import com.studyflow.ai.service.MaterialService;
+import com.studyflow.ai.service.ParseTaskService;
 import com.studyflow.ai.service.UploadSessionService;
 import com.studyflow.ai.service.upload.UploadProgressCache;
 import com.studyflow.ai.vo.ChunkUploadVO;
@@ -48,6 +49,8 @@ public class UploadSessionServiceImpl implements UploadSessionService {
     private final MaterialMapper materialMapper;
 
     private final MaterialService materialService;
+
+    private final ParseTaskService parseTaskService;
 
     private final StorageGateway storageGateway;
 
@@ -222,6 +225,8 @@ public class UploadSessionServiceImpl implements UploadSessionService {
             material.setUploadStatus(MaterialUploadStatusEnum.SUCCESS.name());
             material.setParseStatus(MaterialParseStatusEnum.UPLOADED.name());
             materialMapper.updateById(material);
+            material = materialMapper.selectById(uploadSession.getMaterialId());
+            parseTaskService.createAndDispatchInitialTask(material);
 
             UploadSession updateSession = new UploadSession();
             updateSession.setId(uploadSession.getId());

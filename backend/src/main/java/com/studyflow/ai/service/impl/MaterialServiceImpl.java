@@ -14,6 +14,7 @@ import com.studyflow.ai.enums.ResultCodeEnum;
 import com.studyflow.ai.gateway.StorageGateway;
 import com.studyflow.ai.mapper.MaterialMapper;
 import com.studyflow.ai.service.MaterialService;
+import com.studyflow.ai.service.ParseTaskService;
 import com.studyflow.ai.vo.MaterialVO;
 import java.io.IOException;
 import java.io.InputStream;
@@ -34,6 +35,8 @@ public class MaterialServiceImpl implements MaterialService {
     private final MaterialMapper materialMapper;
 
     private final StorageGateway storageGateway;
+
+    private final ParseTaskService parseTaskService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -68,6 +71,7 @@ public class MaterialServiceImpl implements MaterialService {
             material.setUploadStatus(MaterialUploadStatusEnum.SUCCESS.name());
             material.setParseStatus(MaterialParseStatusEnum.UPLOADED.name());
             materialMapper.updateById(material);
+            parseTaskService.createAndDispatchInitialTask(material);
             return toMaterialVO(material);
         } catch (IOException exception) {
             markUploadFailed(material.getId());

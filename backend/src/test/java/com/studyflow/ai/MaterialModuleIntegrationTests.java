@@ -18,6 +18,7 @@ import com.studyflow.ai.entity.User;
 import com.studyflow.ai.enums.UserStatusEnum;
 import com.studyflow.ai.gateway.StorageGateway;
 import com.studyflow.ai.mapper.MaterialMapper;
+import com.studyflow.ai.mapper.ParseTaskMapper;
 import com.studyflow.ai.mapper.UserMapper;
 import java.io.InputStream;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,6 +49,9 @@ class MaterialModuleIntegrationTests {
     private MaterialMapper materialMapper;
 
     @Autowired
+    private ParseTaskMapper parseTaskMapper;
+
+    @Autowired
     private JwtTokenProvider jwtTokenProvider;
 
     @MockBean
@@ -57,6 +61,7 @@ class MaterialModuleIntegrationTests {
 
     @BeforeEach
     void setUp() {
+        parseTaskMapper.delete(Wrappers.emptyWrapper());
         materialMapper.delete(Wrappers.emptyWrapper());
         userMapper.delete(Wrappers.emptyWrapper());
 

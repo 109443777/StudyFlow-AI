@@ -32,7 +32,7 @@ spring:
     virtual-host: ${RABBITMQ_VHOST:/}
     listener:
       simple:
-        acknowledge-mode: manual
+        acknowledge-mode: auto
         retry:
           enabled: true
           initial-interval: 2s

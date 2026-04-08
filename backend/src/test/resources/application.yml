@@ -15,6 +15,7 @@ spring:
         - classpath:sql/001_user.sql
         - classpath:sql/002_material.sql
         - classpath:sql/003_upload_session.sql
+        - classpath:sql/004_parse_task.sql
 
 studyflow:
   jwt:
