@@ -1,0 +1,13 @@
+.idea/
+.vscode/
+*.iml
+.tools/
+
+.DS_Store
+Thumbs.db
+
+backend/target/
+backend/logs/
+backend/.flattened-pom.xml
+
+*.log
