@@ -22,6 +22,7 @@ public enum ResultCodeEnum {
     MATERIAL_NOT_FOUND(40401, "material not found"),
     UPLOAD_SESSION_NOT_FOUND(40402, "upload session not found"),
     MATERIAL_CONTENT_NOT_FOUND(40403, "material content not found"),
+    MEDIA_TRANSCRIPT_NOT_FOUND(40404, "media transcript not found"),
     NOT_FOUND(40400, "resource not found"),
     CONFLICT(40900, "resource conflict"),
     INTERNAL_ERROR(50000, "internal server error"),

@@ -39,28 +39,38 @@ public class MaterialContentServiceImpl implements MaterialContentService {
         MaterialTextExtractor extractor = materialTextExtractorFactory.getExtractor(material);
         try (InputStream inputStream = storageGateway.download(material.getObjectKey())) {
             TextExtractionResult extractionResult = extractor.extract(inputStream, material.getFileName());
-            MaterialContent existingContent = materialContentMapper.selectOne(new LambdaQueryWrapper<MaterialContent>()
-                    .eq(MaterialContent::getMaterialId, material.getId())
-                    .last("limit 1"));
-            if (existingContent == null) {
-                MaterialContent materialContent = new MaterialContent();
-                materialContent.setMaterialId(material.getId());
-                materialContent.setContentType(MaterialContentTypeEnum.PLAIN_TEXT.name());
-                materialContent.setRawText(extractionResult.getRawText());
-                materialContent.setCleanedText(extractionResult.getCleanedText());
-                materialContent.setChapterInfo(TextCleanupSupport.writeChapterInfo(extractionResult.getChapterInfo()));
-                materialContentMapper.insert(materialContent);
-                return materialContent;
-            }
-            existingContent.setContentType(MaterialContentTypeEnum.PLAIN_TEXT.name());
-            existingContent.setRawText(extractionResult.getRawText());
-            existingContent.setCleanedText(extractionResult.getCleanedText());
-            existingContent.setChapterInfo(TextCleanupSupport.writeChapterInfo(extractionResult.getChapterInfo()));
-            materialContentMapper.updateById(existingContent);
-            return existingContent;
+            return saveOrUpdatePlainText(
+                    material.getId(),
+                    extractionResult.getRawText(),
+                    extractionResult.getCleanedText(),
+                    extractionResult.getChapterInfo());
         } catch (IOException exception) {
             throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "failed to parse material text");
         }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public MaterialContent saveOrUpdatePlainText(Long materialId, String rawText, String cleanedText, java.util.List<String> chapterInfo) {
+        MaterialContent existingContent = materialContentMapper.selectOne(new LambdaQueryWrapper<MaterialContent>()
+                .eq(MaterialContent::getMaterialId, materialId)
+                .last("limit 1"));
+        if (existingContent == null) {
+            MaterialContent materialContent = new MaterialContent();
+            materialContent.setMaterialId(materialId);
+            materialContent.setContentType(MaterialContentTypeEnum.PLAIN_TEXT.name());
+            materialContent.setRawText(rawText);
+            materialContent.setCleanedText(cleanedText);
+            materialContent.setChapterInfo(TextCleanupSupport.writeChapterInfo(chapterInfo));
+            materialContentMapper.insert(materialContent);
+            return materialContent;
+        }
+        existingContent.setContentType(MaterialContentTypeEnum.PLAIN_TEXT.name());
+        existingContent.setRawText(rawText);
+        existingContent.setCleanedText(cleanedText);
+        existingContent.setChapterInfo(TextCleanupSupport.writeChapterInfo(chapterInfo));
+        materialContentMapper.updateById(existingContent);
+        return existingContent;
     }
 
     @Override

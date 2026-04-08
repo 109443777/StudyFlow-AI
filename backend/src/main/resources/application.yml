@@ -84,6 +84,13 @@ studyflow:
     embedding-model: ${AI_EMBEDDING_MODEL:}
     api-key: ${AI_API_KEY:}
     base-url: ${AI_BASE_URL:}
+  transcription:
+    provider: ${TRANSCRIPTION_PROVIDER:mock}
+    mock-prefix: ${TRANSCRIPTION_MOCK_PREFIX:[Mock Transcript]}
+    external:
+      base-url: ${TRANSCRIPTION_BASE_URL:}
+      api-key: ${TRANSCRIPTION_API_KEY:}
+      model: ${TRANSCRIPTION_MODEL:}
 
 logging:
   config: classpath:logback-spring.xml
