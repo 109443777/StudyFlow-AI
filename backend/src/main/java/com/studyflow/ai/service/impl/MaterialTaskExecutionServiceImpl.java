@@ -2,6 +2,7 @@ package com.studyflow.ai.service.impl;
 
 import com.studyflow.ai.entity.Material;
 import com.studyflow.ai.enums.ParseTaskTypeEnum;
+import com.studyflow.ai.service.MaterialEmbeddingService;
 import com.studyflow.ai.service.MaterialContentService;
 import com.studyflow.ai.service.MediaTranscriptService;
 import com.studyflow.ai.service.MaterialTaskExecutionService;
@@ -21,6 +22,8 @@ public class MaterialTaskExecutionServiceImpl implements MaterialTaskExecutionSe
 
     private final StudyContentAiService studyContentAiService;
 
+    private final MaterialEmbeddingService materialEmbeddingService;
+
     @Override
     public void execute(Material material, ParseTaskTypeEnum taskType) {
         switch (taskType) {
@@ -38,9 +41,11 @@ public class MaterialTaskExecutionServiceImpl implements MaterialTaskExecutionSe
                 studyContentAiService.analyzeAndSave(material);
                 log.info("AI study content analysis completed successfully, materialId={}", material.getId());
             }
-            case EMBEDDING ->
-                    log.info("Execute placeholder task, taskType={}, materialId={}, objectKey={}",
-                            taskType, material.getId(), material.getObjectKey());
+            case EMBEDDING -> {
+                materialEmbeddingService.buildIndex(material);
+                log.info("Material vector index built successfully, materialId={}, taskType={}",
+                        material.getId(), taskType);
+            }
         }
     }
 }

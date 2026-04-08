@@ -90,6 +90,18 @@ studyflow:
       base-url: ${STUDYFLOW_AI_BASE_URL:}
       api-key: ${STUDYFLOW_AI_API_KEY:}
       model: ${STUDYFLOW_AI_MODEL:}
+  embedding:
+    provider: ${STUDYFLOW_EMBEDDING_PROVIDER:mock}
+    mock-dimension: ${STUDYFLOW_EMBEDDING_DIMENSION:64}
+    external:
+      base-url: ${STUDYFLOW_EMBEDDING_BASE_URL:}
+      api-key: ${STUDYFLOW_EMBEDDING_API_KEY:}
+      model: ${STUDYFLOW_EMBEDDING_MODEL:}
+  rag:
+    chunk-size: ${STUDYFLOW_RAG_CHUNK_SIZE:800}
+    chunk-overlap: ${STUDYFLOW_RAG_CHUNK_OVERLAP:120}
+    top-k: ${STUDYFLOW_RAG_TOP_K:4}
+    history-size: ${STUDYFLOW_RAG_HISTORY_SIZE:6}
   transcription:
     provider: ${TRANSCRIPTION_PROVIDER:mock}
     mock-prefix: ${TRANSCRIPTION_MOCK_PREFIX:[Mock Transcript]}

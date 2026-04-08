@@ -40,7 +40,35 @@ public class MockAiGateway implements AiGateway {
 
     @Override
     public String answer(String question, List<String> contexts) {
-        return "Mock AI answer: " + question + " | context size=" + (contexts == null ? 0 : contexts.size());
+        List<String> safeContexts = contexts == null ? List.of() : contexts.stream()
+                .filter(item -> item != null && !item.isBlank())
+                .limit(3)
+                .toList();
+        if (safeContexts.isEmpty()) {
+            return "I cannot answer from the uploaded material because no relevant study context was retrieved.";
+        }
+        String normalizedQuestion = extractStudentQuestion(question);
+        StringBuilder builder = new StringBuilder();
+        builder.append("Answer based on the uploaded study material:\n");
+        builder.append("Question: ").append(normalizedQuestion).append('\n');
+        builder.append("Relevant material points:\n");
+        for (int i = 0; i < safeContexts.size(); i++) {
+            builder.append(i + 1).append(". ").append(toStudyPoint(safeContexts.get(i))).append('\n');
+        }
+        builder.append("Conclusion: The answer above is grounded in the retrieved material excerpts.");
+        return builder.toString().trim();
+    }
+
+    private String extractStudentQuestion(String prompt) {
+        if (prompt == null || prompt.isBlank()) {
+            return "";
+        }
+        String marker = "Student question:";
+        int index = prompt.lastIndexOf(marker);
+        if (index < 0) {
+            return prompt.trim();
+        }
+        return prompt.substring(index + marker.length()).trim();
     }
 
     private List<String> extractSentences(String text) {

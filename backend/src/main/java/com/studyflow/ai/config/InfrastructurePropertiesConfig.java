@@ -8,7 +8,9 @@ import org.springframework.context.annotation.Configuration;
         MinioProperties.class,
         LangChainProperties.class,
         AiProperties.class,
+        EmbeddingProperties.class,
         JwtProperties.class,
+        RagProperties.class,
         UploadProperties.class,
         TranscriptionProperties.class
 })
