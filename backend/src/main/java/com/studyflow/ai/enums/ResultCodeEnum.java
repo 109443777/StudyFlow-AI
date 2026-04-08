@@ -8,13 +8,17 @@ import lombok.RequiredArgsConstructor;
 public enum ResultCodeEnum {
 
     SUCCESS(0, "success"),
-    BAD_REQUEST(40000, "请求参数错误"),
-    UNAUTHORIZED(40100, "未登录或鉴权失败"),
-    FORBIDDEN(40300, "无权限访问"),
-    NOT_FOUND(40400, "资源不存在"),
-    CONFLICT(40900, "资源冲突"),
-    INTERNAL_ERROR(50000, "系统内部错误"),
-    SYSTEM_BUSY(50001, "系统繁忙，请稍后重试");
+    BAD_REQUEST(40000, "bad request"),
+    USERNAME_ALREADY_EXISTS(40001, "username already exists"),
+    UNAUTHORIZED(40100, "unauthorized"),
+    INVALID_CREDENTIALS(40101, "invalid username or password"),
+    TOKEN_INVALID(40102, "invalid or expired token"),
+    FORBIDDEN(40300, "forbidden"),
+    USER_DISABLED(40301, "user has been disabled"),
+    NOT_FOUND(40400, "resource not found"),
+    CONFLICT(40900, "resource conflict"),
+    INTERNAL_ERROR(50000, "internal server error"),
+    SYSTEM_BUSY(50001, "system busy, please retry later");
 
     private final Integer code;
 

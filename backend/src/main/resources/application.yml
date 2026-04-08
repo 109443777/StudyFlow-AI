@@ -67,6 +67,11 @@ management:
       show-details: always
 
 studyflow:
+  jwt:
+    secret: ${JWT_SECRET:studyflow-ai-super-secret-key-for-jwt-token-2026}
+    expire-seconds: ${JWT_EXPIRE_SECONDS:604800}
+    header-name: ${JWT_HEADER_NAME:Authorization}
+    token-prefix: ${JWT_TOKEN_PREFIX:Bearer }
   minio:
     endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
     access-key: ${MINIO_ACCESS_KEY:studyflow}

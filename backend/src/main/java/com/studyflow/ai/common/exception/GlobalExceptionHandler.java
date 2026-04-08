@@ -3,7 +3,9 @@ package com.studyflow.ai.common.exception;
 import com.studyflow.ai.common.response.Result;
 import com.studyflow.ai.enums.ResultCodeEnum;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.support.DefaultMessageSourceResolvable;
 import org.springframework.validation.BindException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -23,7 +25,29 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({MethodArgumentNotValidException.class, BindException.class, MissingServletRequestParameterException.class})
     public Result<Void> handleValidationException(Exception exception, HttpServletRequest request) {
         log.warn("Validation exception on [{} {}]: {}", request.getMethod(), request.getRequestURI(), exception.getMessage());
-        return Result.failure(ResultCodeEnum.BAD_REQUEST.getCode(), ResultCodeEnum.BAD_REQUEST.getMessage());
+        String message = ResultCodeEnum.BAD_REQUEST.getMessage();
+        if (exception instanceof MethodArgumentNotValidException methodArgumentNotValidException) {
+            message = methodArgumentNotValidException.getBindingResult()
+                    .getFieldErrors()
+                    .stream()
+                    .findFirst()
+                    .map(DefaultMessageSourceResolvable::getDefaultMessage)
+                    .orElse(message);
+        } else if (exception instanceof BindException bindException) {
+            message = bindException.getBindingResult()
+                    .getFieldErrors()
+                    .stream()
+                    .findFirst()
+                    .map(DefaultMessageSourceResolvable::getDefaultMessage)
+                    .orElse(message);
+        }
+        return Result.failure(ResultCodeEnum.BAD_REQUEST.getCode(), message);
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public Result<Void> handleConstraintViolationException(ConstraintViolationException exception, HttpServletRequest request) {
+        log.warn("Constraint violation on [{} {}]: {}", request.getMethod(), request.getRequestURI(), exception.getMessage());
+        return Result.failure(ResultCodeEnum.BAD_REQUEST.getCode(), exception.getMessage());
     }
 
     @ExceptionHandler(Exception.class)
