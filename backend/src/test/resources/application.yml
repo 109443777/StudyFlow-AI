@@ -14,6 +14,7 @@ spring:
       schema-locations:
         - classpath:sql/001_user.sql
         - classpath:sql/002_material.sql
+        - classpath:sql/003_upload_session.sql
 
 studyflow:
   jwt:
@@ -21,6 +22,8 @@ studyflow:
     expire-seconds: 7200
     header-name: Authorization
     token-prefix: Bearer 
+  upload:
+    session-expire-hours: 24
   minio:
     endpoint:
     access-key:

@@ -72,6 +72,8 @@ studyflow:
     expire-seconds: ${JWT_EXPIRE_SECONDS:604800}
     header-name: ${JWT_HEADER_NAME:Authorization}
     token-prefix: ${JWT_TOKEN_PREFIX:Bearer }
+  upload:
+    session-expire-hours: ${UPLOAD_SESSION_EXPIRE_HOURS:24}
   minio:
     endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
     access-key: ${MINIO_ACCESS_KEY:studyflow}

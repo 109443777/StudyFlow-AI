@@ -4,8 +4,10 @@ import com.studyflow.ai.common.exception.BusinessException;
 import com.studyflow.ai.config.MinioProperties;
 import com.studyflow.ai.enums.ResultCodeEnum;
 import io.minio.BucketExistsArgs;
+import io.minio.GetObjectArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
+import io.minio.RemoveObjectArgs;
 import io.minio.PutObjectArgs;
 import java.io.InputStream;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +36,32 @@ public class MinioStorageGateway implements StorageGateway {
                     .build());
         } catch (Exception exception) {
             throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "failed to upload file to storage");
+        }
+    }
+
+    @Override
+    public InputStream download(String objectKey) {
+        try {
+            ensureBucket();
+            return minioClient.getObject(GetObjectArgs.builder()
+                    .bucket(minioProperties.getBucketName())
+                    .object(objectKey)
+                    .build());
+        } catch (Exception exception) {
+            throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "failed to download file from storage");
+        }
+    }
+
+    @Override
+    public void delete(String objectKey) {
+        try {
+            ensureBucket();
+            minioClient.removeObject(RemoveObjectArgs.builder()
+                    .bucket(minioProperties.getBucketName())
+                    .object(objectKey)
+                    .build());
+        } catch (Exception exception) {
+            throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "failed to delete file from storage");
         }
     }
 

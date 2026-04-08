@@ -17,6 +17,15 @@ public class FallbackStorageGateway implements StorageGateway {
     }
 
     @Override
+    public InputStream download(String objectKey) {
+        throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "storage gateway is not configured");
+    }
+
+    @Override
+    public void delete(String objectKey) {
+    }
+
+    @Override
     public String getFileUrl(String objectKey) {
         return null;
     }
