@@ -8,6 +8,7 @@ Thumbs.db
 
 backend/target/
 backend/logs/
+backend/config/
 backend/.flattened-pom.xml
 
 *.log
