@@ -21,9 +21,11 @@ import com.studyflow.ai.service.ai.StudyContentAnalysisResult;
 import com.studyflow.ai.service.ai.StudyContentPromptBuilder;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class StudyContentAiServiceImpl implements StudyContentAiService {
@@ -49,11 +51,14 @@ public class StudyContentAiServiceImpl implements StudyContentAiService {
         if (materialContent == null) {
             throw new BusinessException(ResultCodeEnum.MATERIAL_CONTENT_NOT_FOUND);
         }
+        long startTime = System.currentTimeMillis();
         StudyContentAnalysisResult result = aiGateway.analyzeStudyContent(AiStudyContentRequest.builder()
                 .materialId(material.getId())
                 .cleanedText(materialContent.getCleanedText())
                 .prompt(studyContentPromptBuilder.buildPrompt(material, materialContent))
                 .build());
+        log.info("AI study content analysis finished, materialId={}, costMs={}",
+                material.getId(), System.currentTimeMillis() - startTime);
 
         MaterialSummary existingSummary = materialSummaryMapper.selectOne(new LambdaQueryWrapper<MaterialSummary>()
                 .eq(MaterialSummary::getMaterialId, material.getId())
@@ -76,6 +81,19 @@ public class StudyContentAiServiceImpl implements StudyContentAiService {
         existingSummary.setReviewOutline(writeAsJson(result.getReviewOutline()));
         materialSummaryMapper.updateById(existingSummary);
         return existingSummary;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public MaterialSummary analyzeAndSaveByMaterialId(Long userId, Long materialId) {
+        Material material = materialMapper.selectOne(new LambdaQueryWrapper<Material>()
+                .eq(Material::getId, materialId)
+                .eq(Material::getUserId, userId)
+                .last("limit 1"));
+        if (material == null) {
+            throw new BusinessException(ResultCodeEnum.MATERIAL_NOT_FOUND);
+        }
+        return analyzeAndSave(material);
     }
 
     @Override

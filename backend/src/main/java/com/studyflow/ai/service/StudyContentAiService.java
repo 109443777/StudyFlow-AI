@@ -10,6 +10,8 @@ public interface StudyContentAiService {
 
     MaterialSummary analyzeAndSave(Material material);
 
+    MaterialSummary analyzeAndSaveByMaterialId(Long userId, Long materialId);
+
     MaterialSummary getByMaterialId(Long userId, MaterialSummaryQueryDTO materialSummaryQueryDTO);
 
     List<String> readStringList(String json);

@@ -2,6 +2,8 @@ package com.studyflow.ai.controller;
 
 import com.studyflow.ai.common.auth.LoginRequired;
 import com.studyflow.ai.common.auth.UserContext;
+import com.studyflow.ai.common.ratelimit.RateLimit;
+import com.studyflow.ai.common.ratelimit.RateLimitTarget;
 import com.studyflow.ai.common.response.Result;
 import com.studyflow.ai.dto.AskQuestionDTO;
 import com.studyflow.ai.dto.CreateQaSessionDTO;
@@ -46,6 +48,8 @@ public class QaController {
     }
 
     @LoginRequired
+    @RateLimit(scene = "rag_ask", limit = 20, windowSeconds = 60, target = RateLimitTarget.USER,
+            message = "AI question answering is too frequent, please retry later")
     @Operation(summary = "Ask question for a material session")
     @PostMapping("/sessions/{sessionId}/ask")
     public Result<QaAnswerVO> askQuestion(@PathVariable Long sessionId, @Valid @RequestBody AskQuestionDTO askQuestionDTO) {

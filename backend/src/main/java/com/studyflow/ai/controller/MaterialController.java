@@ -1,6 +1,8 @@
 package com.studyflow.ai.controller;
 
 import com.studyflow.ai.common.auth.LoginRequired;
+import com.studyflow.ai.common.ratelimit.RateLimit;
+import com.studyflow.ai.common.ratelimit.RateLimitTarget;
 import com.studyflow.ai.common.response.Result;
 import com.studyflow.ai.dto.MaterialQueryDTO;
 import com.studyflow.ai.dto.MaterialUploadDTO;
@@ -29,6 +31,8 @@ public class MaterialController {
     private final MaterialService materialService;
 
     @LoginRequired
+    @RateLimit(scene = "material_upload", limit = 10, windowSeconds = 60, target = RateLimitTarget.USER,
+            message = "upload requests are too frequent, please retry later")
     @Operation(summary = "Upload material")
     @PostMapping("/upload")
     public Result<MaterialVO> uploadMaterial(@Valid @ModelAttribute MaterialUploadDTO materialUploadDTO) {

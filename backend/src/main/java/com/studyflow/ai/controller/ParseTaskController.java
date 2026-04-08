@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -42,6 +43,14 @@ public class ParseTaskController {
                 .stream()
                 .map(this::toParseTaskVO)
                 .toList());
+    }
+
+    @LoginRequired
+    @Operation(summary = "Dispatch initial parse task for material")
+    @PostMapping("/materials/{materialId}/dispatch")
+    public Result<ParseTaskVO> dispatchMaterialParse(@PathVariable Long materialId) {
+        Long userId = UserContext.getRequiredUserId();
+        return Result.success(toParseTaskVO(parseTaskService.requestInitialParse(userId, materialId)));
     }
 
     private ParseTaskVO toParseTaskVO(ParseTask parseTask) {

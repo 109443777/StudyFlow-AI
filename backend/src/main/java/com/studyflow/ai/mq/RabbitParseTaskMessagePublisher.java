@@ -2,8 +2,10 @@ package com.studyflow.ai.mq;
 
 import com.studyflow.ai.enums.ParseTaskTypeEnum;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 
+@Slf4j
 @RequiredArgsConstructor
 public class RabbitParseTaskMessagePublisher implements ParseTaskMessagePublisher {
 
@@ -12,6 +14,8 @@ public class RabbitParseTaskMessagePublisher implements ParseTaskMessagePublishe
     @Override
     public void publish(ParseTaskMessage message, ParseTaskTypeEnum taskType) {
         rabbitTemplate.convertAndSend(MqConstants.TASK_EXCHANGE, resolveRoutingKey(taskType), message);
+        log.info("Published parse task message, taskId={}, materialId={}, taskType={}, routingKey={}",
+                message.getTaskId(), message.getMaterialId(), taskType, resolveRoutingKey(taskType));
     }
 
     private String resolveRoutingKey(ParseTaskTypeEnum taskType) {

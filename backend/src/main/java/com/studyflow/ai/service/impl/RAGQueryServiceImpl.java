@@ -26,10 +26,12 @@ import com.studyflow.ai.service.rag.RagPromptBuilder;
 import com.studyflow.ai.service.vector.ChunkSearchResult;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class RAGQueryServiceImpl implements RAGQueryService {
@@ -89,7 +91,10 @@ public class RAGQueryServiceImpl implements RAGQueryService {
                 material,
                 askQuestionDTO.getQuestion(),
                 qaSessionContextCache.recentHistory(qaSession.getId(), ragProperties.getHistorySize()));
+        long startTime = System.currentTimeMillis();
         String answer = aiGateway.answer(prompt, contexts);
+        log.info("RAG answer generated, sessionId={}, materialId={}, topK={}, costMs={}",
+                qaSession.getId(), material.getId(), topK, System.currentTimeMillis() - startTime);
 
         QaMessage questionMessage = new QaMessage();
         questionMessage.setSessionId(qaSession.getId());

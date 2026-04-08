@@ -35,11 +35,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UploadSessionServiceImpl implements UploadSessionService {
@@ -226,6 +228,8 @@ public class UploadSessionServiceImpl implements UploadSessionService {
             material.setParseStatus(MaterialParseStatusEnum.UPLOADED.name());
             materialMapper.updateById(material);
             material = materialMapper.selectById(uploadSession.getMaterialId());
+            log.info("Chunk upload completed and merged successfully, uploadId={}, materialId={}, totalChunks={}",
+                    uploadSession.getUploadId(), uploadSession.getMaterialId(), uploadSession.getTotalChunks());
             parseTaskService.createAndDispatchInitialTask(material);
 
             UploadSession updateSession = new UploadSession();

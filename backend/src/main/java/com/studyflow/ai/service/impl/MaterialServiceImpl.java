@@ -23,11 +23,13 @@ import java.util.Locale;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class MaterialServiceImpl implements MaterialService {
@@ -71,6 +73,8 @@ public class MaterialServiceImpl implements MaterialService {
             material.setUploadStatus(MaterialUploadStatusEnum.SUCCESS.name());
             material.setParseStatus(MaterialParseStatusEnum.UPLOADED.name());
             materialMapper.updateById(material);
+            log.info("Material upload succeeded, materialId={}, userId={}, fileName={}, materialType={}",
+                    material.getId(), userId, originalFilename, material.getMaterialType());
             parseTaskService.createAndDispatchInitialTask(material);
             return toMaterialVO(material);
         } catch (IOException exception) {

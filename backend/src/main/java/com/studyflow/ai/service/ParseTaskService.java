@@ -9,6 +9,8 @@ public interface ParseTaskService {
 
     void createAndDispatchInitialTask(Material material);
 
+    ParseTask requestInitialParse(Long userId, Long materialId);
+
     void processTask(Long taskId);
 
     ParseTask getTaskById(Long taskId);
