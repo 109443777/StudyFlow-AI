@@ -1,123 +1,132 @@
 # StudyFlow AI Backend
 
-StudyFlow AI 后端项目，基于 Spring Boot 3、Java 17 与 Maven 构建，当前已实现用户鉴权、资料上传、分片上传、解析任务中心、文本解析、音视频转写、AI 内容理解、向量化检索、RAG 问答、学习计划与系统治理等核心模块。
+StudyFlow AI backend project built with Spring Boot 3, Java 17, and Maven.
 
-## 本地启动
+Current backend capabilities include:
+- user registration and JWT login
+- material upload and chunk upload resume
+- async parse task center
+- document text extraction
+- audio and video transcription
+- AI content understanding
+- embedding and RAG question answering
+- study outline and study plan generation
+- governance features such as idempotency, rate limit, retry, and compensation
 
-1. 启动基础依赖服务
+## Local Infra
+
+Start the required infrastructure from the `backend` directory:
 
 ```bash
-cd backend
 docker compose up -d
 ```
 
-2. 检查容器状态
+Default exposed ports:
+- MySQL: `3307`
+- Redis: `6379`
+- RabbitMQ: `5672`
+- RabbitMQ Management: `15672`
+- MinIO API: `9000`
+- MinIO Console: `9001`
+
+Why MySQL uses `3307`:
+- Many Windows environments already have a local MySQL service on `3306`
+- The compose file uses `3307` by default to avoid port conflicts
+
+If your machine does not use `3306`, you can switch back:
+
+```bash
+MYSQL_HOST_PORT=3306 docker compose up -d
+```
+
+Check container status:
 
 ```bash
 docker compose ps
 ```
 
-3. 准备本地 AI 配置
+## Database Bootstrap
 
-项目支持通过工作目录下的 `config/` 目录覆盖默认配置。推荐复制示例文件后，按本地模型供应商填写：
+The compose file mounts MySQL init scripts from:
+
+```text
+backend/docker/mysql/init
+```
+
+On a fresh MySQL volume, all current StudyFlow tables are created automatically.
+
+## Local Application Config
+
+Copy the example local config and fill in your own secrets:
 
 ```bash
 cp application-local.example.yml config/application-local.yml
 ```
 
-Windows PowerShell:
+PowerShell:
 
 ```powershell
 Copy-Item .\application-local.example.yml .\config\application-local.yml
 ```
 
-说明：
-- `config/application-local.yml` 已被 Git 忽略，适合放本地密钥
-- 如果暂时不接真实模型，保留默认 `mock` 配置即可
+Notes:
+- `config/application-local.yml` is ignored by Git
+- use it for AI keys and local overrides
+- if you use the default Docker MySQL port, keep the datasource port as `3307`
 
-4. 启动项目
+## Run The App
 
-默认启动：
+Default startup:
 
 ```bash
 ./mvnw spring-boot:run
 ```
 
-启用本地 AI profile：
+Run with local profile:
 
 ```bash
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
-Windows PowerShell:
+PowerShell:
 
 ```powershell
 .\mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
-5. 运行测试
+## Run Tests
 
 ```bash
 ./mvnw test
 ```
 
-Windows PowerShell:
+PowerShell:
 
 ```powershell
 .\mvnw.cmd test
 ```
 
-## 常用环境变量
+## Common Endpoints
 
-- `MYSQL_HOST`，默认 `localhost`
-- `MYSQL_PORT`，默认 `3306`
-- `MYSQL_DB`，默认 `studyflow_ai`
-- `MYSQL_USERNAME`，默认 `studyflow`
-- `MYSQL_PASSWORD`，默认 `studyflow123`
-- `REDIS_HOST`，默认 `localhost`
-- `REDIS_PORT`，默认 `6379`
-- `REDIS_PASSWORD`，默认 `redis123456`
-- `RABBITMQ_HOST`，默认 `localhost`
-- `RABBITMQ_PORT`，默认 `5672`
-- `RABBITMQ_USERNAME`，默认 `studyflow`
-- `RABBITMQ_PASSWORD`，默认 `studyflow123`
-- `MINIO_ENDPOINT`，默认 `http://localhost:9000`
-- `MINIO_ACCESS_KEY`，默认 `studyflow`
-- `MINIO_SECRET_KEY`，默认 `studyflow123`
-- `MINIO_BUCKET`，默认 `studyflow`
+- Swagger UI: `http://localhost:8080/swagger-ui/index.html`
+- Health API: `http://localhost:8080/api/health`
+- RabbitMQ Management: `http://localhost:15672`
+- MinIO Console: `http://localhost:9001`
 
-## AI 与 Embedding 本地示例
+## Default Infra Credentials
 
-可参考 [application-local.example.yml](F:\光明实验室\studyflow-ai\backend\application-local.example.yml)：
+For local development only:
 
-- `studyflow.ai.provider=langchain4j`
-- `studyflow.embedding.provider=langchain4j`
-- `studyflow.langchain4j.chat-model`
-- `studyflow.langchain4j.embedding-model`
-- `studyflow.langchain4j.api-key`
-- `studyflow.langchain4j.base-url`
-
-如果使用 OpenAI 兼容接口，例如阿里云百炼，可直接填写兼容模式 `base-url`。
-
-## 访问入口
-
-- 服务地址：`http://localhost:8080`
-- 健康检查：`http://localhost:8080/api/health`
-- Swagger UI：`http://localhost:8080/swagger-ui/index.html`
-- OpenAPI：`http://localhost:8080/v3/api-docs`
-- RabbitMQ 管理台：`http://localhost:15672`
-- MinIO Console：`http://localhost:9001`
-
-## 当前能力
-
-- 统一返回体 `Result<T>`
-- 全局异常处理与统一响应码
-- MyBatis-Plus 基础配置
-- 用户注册、登录、JWT 鉴权
-- 普通上传、分片上传、断点续传
-- 资料解析任务中心、重试、补偿、死信
-- 文本解析与音视频转写
-- AI 摘要、关键词、知识点、复习重点抽取
-- 文本切块、向量化、RAG 问答
-- 学习提纲与考试复习计划生成
-- Redis 幂等、限流、会话缓存
+- MySQL
+  - database: `studyflow_ai`
+  - username: `studyflow`
+  - password: `studyflow123`
+  - root password: `root123456`
+- Redis
+  - password: `redis123456`
+- RabbitMQ
+  - username: `studyflow`
+  - password: `studyflow123`
+- MinIO
+  - access key: `studyflow`
+  - secret key: `studyflow123`
