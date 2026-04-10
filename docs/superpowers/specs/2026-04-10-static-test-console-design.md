@@ -1,211 +1,212 @@
-# StudyFlow Static Test Console Design
+# StudyFlow 静态测试台设计文档
 
-## Goal
+## 目标
 
-Build a single-page static frontend under the existing Spring Boot backend so the current StudyFlow AI backend capabilities can be exercised and demonstrated from one browser page without introducing a separate frontend project.
+在现有 Spring Boot 后端工程中增加一个单页静态前端，用来集中调用和展示 StudyFlow AI 已有的后端接口能力，方便本地联调、功能演示和项目答辩，不新增独立前端工程。
 
-## Scope
+## 范围
 
-This page is a testing and demo console, not a production user-facing UI.
+这是一个测试与演示页面，不是正式产品页面。
 
-Included capabilities:
-- system health check
-- user registration
-- user login
-- current user info query
-- normal material upload
-- chunk upload flow testing
-- material detail query
-- my materials query
-- parse task query
-- material content query
-- material summary query and summary generation
-- media transcript query
-- QA session creation
-- material-based QA ask and history query
-- review outline generation
-- exam study plan generation
-- study plan history and detail query
-- task failure record query and compensation
+本轮纳入范围的能力：
+- 系统健康检查
+- 用户注册
+- 用户登录
+- 当前用户信息查询
+- 普通资料上传
+- 分片上传链路测试
+- 资料详情查询
+- 我的资料列表查询
+- 解析任务查询
+- 文本内容查询
+- 摘要查询与手动生成
+- 转写结果查询
+- 问答会话创建
+- 基于资料的提问与历史查询
+- 复习提纲生成
+- 考试计划生成
+- 学习计划历史与详情查询
+- 失败任务记录查询与补偿
 
-Out of scope:
-- polished product UI
-- Vue or separate frontend build tooling
-- OCR or media preview
-- visual analytics dashboards
-- generic API explorer for every endpoint in Swagger
+本轮不做：
+- 正式产品级 UI
+- Vue 或独立前端工程
+- OCR 和媒体预览
+- 图表分析面板
+- Swagger 全接口浏览器
 
-## Architecture
+## 架构设计
 
-The frontend will be served directly by Spring Boot from `src/main/resources/static`. The page will use plain HTML, CSS, and vanilla JavaScript with `fetch` to call backend APIs. Authentication state will be stored in `localStorage`, and a small API wrapper will inject the `Authorization` header automatically.
+前端页面直接由 Spring Boot 从 `src/main/resources/static` 提供，使用原生 HTML、CSS 和 JavaScript，通过 `fetch` 调用后端接口。登录态保存在 `localStorage`，由统一请求封装自动注入 `Authorization` 头。
 
-To keep the code maintainable without introducing a framework, the frontend will be split into three files:
-- `index.html` for semantic page structure
-- `styles.css` for layout and visual treatment
-- `app.js` for API calls, state handling, and section rendering
+为了保持代码可维护性，但又不引入框架复杂度，页面拆成三个静态文件：
+- `index.html`：页面结构
+- `styles.css`：样式与布局
+- `app.js`：请求逻辑、状态处理、事件绑定
 
-## UI Structure
+## 页面结构
 
-The page will be a single dashboard-style console with vertically stacked cards.
+页面采用单页控制台形式，按功能分区展示。
 
-Sections:
-1. System Status
-2. Authentication
-3. Material Upload
-4. Parse and Content Query
-5. RAG QA
-6. Study Support
-7. Failure Records
-8. Global Request Log
+区块包括：
+1. 系统状态
+2. 认证区
+3. 资料上传区
+4. 解析结果区
+5. RAG 问答区
+6. 学习辅助区
+7. 失败任务区
+8. 全局请求日志区
 
-Each section will contain:
-- a compact form
-- one or more action buttons
-- a result panel showing formatted JSON or key fields
+每个区块包含：
+- 表单输入
+- 操作按钮
+- 结果展示面板
 
-## Visual Direction
+## 视觉方向
 
-The page should look deliberate but lightweight:
-- warm light background instead of default white
-- clear section cards
-- monospace request log area
-- restrained accent color for actions and status labels
-- mobile-friendly stacked layout
+页面以“清晰可测”为主，不做复杂设计，但要避免过于粗糙。
 
-This is still a testing console, so usability and readability take priority over decorative design.
+样式原则：
+- 使用偏暖的浅色背景，不用纯白默认页
+- 区块采用卡片式布局
+- 请求日志区使用等宽字体
+- 状态信息通过标签色区分
+- 桌面端双列或网格布局，移动端自动堆叠
 
-## Data Flow
+## 数据流说明
 
-### Authentication
+### 认证流程
 
-- Register submits `POST /api/auth/register`
-- Login submits `POST /api/auth/login`
-- On success, save JWT token to `localStorage`
-- Current user info uses `GET /api/users/me`
+- 注册：`POST /api/auth/register`
+- 登录：`POST /api/auth/login`
+- 登录成功后将 JWT 保存到 `localStorage`
+- 当前用户信息：`GET /api/users/me`
 
-### Material Flow
+### 资料流程
 
-- Normal upload submits `POST /api/materials/upload`
-- Chunk upload flow uses:
+- 普通上传：`POST /api/materials/upload`
+- 分片上传：
   - `POST /api/material-uploads/init`
   - `POST /api/material-uploads/chunk`
   - `GET /api/material-uploads/{uploadId}/chunks`
   - `POST /api/material-uploads/complete`
-- Material query uses:
+- 资料查询：
   - `GET /api/materials/{materialId}`
   - `GET /api/materials/my`
 
-### Parse and Content Flow
+### 解析与内容流程
 
-- Parse tasks query uses:
+- 解析任务查询：
   - `GET /api/parse-tasks/{taskId}`
   - `GET /api/parse-tasks`
-- Material content query uses:
+- 文本内容查询：
   - `GET /api/material-contents?materialId=...`
-- Material summary uses:
+- 摘要查询与生成：
   - `GET /api/material-summaries?materialId=...`
   - `POST /api/material-summaries/{materialId}/generate`
-- Media transcript uses:
+- 转写查询：
   - `GET /api/media-transcripts?materialId=...`
 
-### QA Flow
+### 问答流程
 
-- Create session uses `POST /api/qa/sessions`
-- Ask question uses `POST /api/qa/sessions/{sessionId}/ask`
-- Query messages uses `GET /api/qa/sessions/{sessionId}/messages`
+- 创建问答会话：`POST /api/qa/sessions`
+- 提问：`POST /api/qa/sessions/{sessionId}/ask`
+- 历史记录：`GET /api/qa/sessions/{sessionId}/messages`
 
-### Study Support Flow
+### 学习辅助流程
 
-- Generate review outline uses `POST /api/study-plans/review-outline`
-- Generate exam plan uses `POST /api/study-plans/exam-plan`
-- Query plan detail uses `GET /api/study-plans/{planId}`
-- Query plan history uses `GET /api/study-plans`
+- 生成复习提纲：`POST /api/study-plans/review-outline`
+- 生成考试计划：`POST /api/study-plans/exam-plan`
+- 学习计划详情：`GET /api/study-plans/{planId}`
+- 学习计划历史：`GET /api/study-plans`
 
-### Failure Governance Flow
+### 治理与补偿流程
 
-- Query failure records uses `GET /api/task-failures`
-- Compensate failure uses `POST /api/task-failures/{recordId}/compensate`
+- 失败任务查询：`GET /api/task-failures`
+- 手动补偿：`POST /api/task-failures/{recordId}/compensate`
 
-## JavaScript Design
+## JavaScript 设计
 
-`app.js` will be organized into focused helpers instead of one large script.
+`app.js` 采用轻量分层，不把全部逻辑塞进一个超大函数。
 
-Planned internal structure:
-- config constants for endpoint paths
-- DOM helpers for reading fields and rendering JSON
-- token storage helpers
-- shared `apiRequest()` wrapper
-- one handler per feature group
-- page bootstrap that binds listeners on `DOMContentLoaded`
+内部结构规划：
+- 接口地址常量
+- DOM 读写工具
+- token 存取工具
+- 通用 `apiRequest()` 请求封装
+- 每个功能区独立的事件处理函数
+- `DOMContentLoaded` 时统一绑定
 
-The code should avoid framework-style complexity. The only shared state is:
-- current JWT token
-- latest IDs for convenience, such as `materialId`, `uploadId`, and `sessionId`
+共享状态仅保留最少内容：
+- 当前 JWT
+- 最近一次操作得到的 `materialId`
+- 最近一次操作得到的 `uploadId`
+- 最近一次操作得到的 `sessionId`
 
-## Error Handling
+## 异常处理
 
-All requests will route through a common request helper that:
-- appends JWT token when present
-- parses JSON safely
-- surfaces backend `Result` messages
-- writes success and failure details into the global request log
+所有请求统一走通用请求方法，负责：
+- 自动附带 token
+- 尝试解析 JSON
+- 提取后端 `Result` 的 `code / message / data`
+- 将成功和失败记录写入页面日志区
 
-UI-level handling:
-- show inline result JSON for each section
-- keep failed requests visible instead of silently clearing content
-- warn clearly when token is missing for protected endpoints
+页面层处理原则：
+- 每个功能区都保留最近一次请求结果
+- 请求失败时不清空结果
+- 对未登录访问给出明确提示
 
-## Testing Strategy
+## 测试策略
 
-Because this is static frontend work inside a backend repo, testing will focus on:
-- backend regression: run `backend/mvnw.cmd test`
-- static asset verification: ensure files are served from Spring Boot static resources
-- manual smoke test checklist:
-  - open page in browser
-  - register and login
-  - call health check
-  - upload a sample text file
-  - query material list
-  - create QA session
-  - ask one question
-  - generate one review outline
+由于这是静态资源页面，本轮测试重点是：
+- 后端回归测试：运行 `backend/mvnw.cmd test`
+- 静态资源可访问验证：确认 Spring Boot 能成功提供页面和脚本
+- 手工冒烟测试：
+  - 打开首页
+  - 注册并登录
+  - 调用健康检查
+  - 上传一个文本资料
+  - 查询资料列表
+  - 创建问答会话并提问
+  - 生成一次复习提纲
 
-## File Plan
+## 文件规划
 
-Files to create:
+新增文件：
 - `backend/src/main/resources/static/index.html`
 - `backend/src/main/resources/static/styles.css`
 - `backend/src/main/resources/static/app.js`
 
-Files to update:
+更新文件：
 - `backend/README.md`
 
-## Risks and Mitigations
+## 风险与应对
 
-### Risk: One page becomes too crowded
+### 风险 1：单页内容过多，界面拥挤
 
-Mitigation:
-- separate into section cards
-- use compact forms
-- add small helper text and defaults
+应对：
+- 分功能卡片展示
+- 表单字段尽量精简
+- 结果展示统一使用格式化 JSON 面板
 
-### Risk: Protected endpoints fail without obvious cause
+### 风险 2：受保护接口失败时不易判断原因
 
-Mitigation:
-- display token state in authentication section
-- show request log with response code and message
+应对：
+- 认证区显示当前 token 状态
+- 日志区记录请求路径、方法、结果和错误信息
 
-### Risk: Chunk upload interaction is awkward in plain JavaScript
+### 风险 3：分片上传在原生 JS 下操作繁琐
 
-Mitigation:
-- keep the UI minimal
-- support manual chunk flow testing instead of full automatic resumable uploader behavior
+应对：
+- 本轮只做测试型交互
+- 支持手动走完整分片链路，不追求产品级上传体验
 
-## Acceptance Criteria
+## 验收标准
 
-The feature is complete when:
-- the backend serves a single static page successfully
-- the page can authenticate and persist JWT locally
-- the page can exercise the main backend capabilities from one browser view
-- request results are visible without opening devtools
-- backend tests still pass
+满足以下条件即视为完成：
+- 后端能成功提供单页静态测试台
+- 页面可完成登录并持久化 JWT
+- 页面能从单一入口覆盖当前主要后端能力
+- 不打开浏览器开发者工具也能看到请求结果
+- 后端测试保持通过
