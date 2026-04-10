@@ -2,6 +2,7 @@
 .vscode/
 *.iml
 .tools/
+.worktrees/
 
 .DS_Store
 Thumbs.db
