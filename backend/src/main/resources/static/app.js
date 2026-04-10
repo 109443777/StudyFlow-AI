@@ -1,4 +1,4 @@
-const STORAGE_KEYS = {
+﻿const STORAGE_KEYS = {
     token: "studyflow.accessToken",
     latestMaterialId: "studyflow.latestMaterialId",
     latestUploadId: "studyflow.latestUploadId",
@@ -12,6 +12,128 @@ const LATEST_VALUE_STORAGE_MAP = {
     uploadId: STORAGE_KEYS.latestUploadId,
     sessionId: STORAGE_KEYS.latestSessionId
 };
+
+function applyChineseConsoleLocale() {
+    document.documentElement.lang = "zh-CN";
+    document.title = "\u0053\u0074\u0075\u0064\u0079\u0046\u006c\u006f\u0077\u0020\u0041\u0049\u0020\u540e\u7aef\u6d4b\u8bd5\u53f0";
+
+    const replacements = [
+        ["StudyFlow AI test console", "\u0053\u0074\u0075\u0064\u0079\u0046\u006c\u006f\u0077\u0020\u0041\u0049\u0020\u540e\u7aef\u6d4b\u8bd5\u53f0"],
+        ["A static shell for auth, upload, parse, QA, study flow, and failure review. This console now supports health checks, auth flows, current-user queries, and request logs.", "\u4e00\u4e2a\u9762\u5411\u540e\u7aef\u8054\u8c03\u7684\u9759\u6001\u6d4b\u8bd5\u53f0\uff0c\u8986\u76d6\u8ba4\u8bc1\u3001\u4e0a\u4f20\u3001\u89e3\u6790\u3001\u95ee\u7b54\u3001\u5b66\u4e60\u8f85\u52a9\u548c\u5931\u8d25\u8865\u507f\u7b49\u6838\u5fc3\u6d41\u7a0b\u3002\u5f53\u524d\u9875\u9762\u5df2\u7ecf\u652f\u6301\u5065\u5eb7\u68c0\u67e5\u3001\u767b\u5f55\u6001\u64cd\u4f5c\u3001\u5f53\u524d\u7528\u6237\u67e5\u8be2\u548c\u7edf\u4e00\u8bf7\u6c42\u65e5\u5fd7\u5c55\u793a\u3002"],
+        ["token status", "\u4ee4\u724c\u72b6\u6001"],
+        ["Token status", "\u4ee4\u724c\u72b6\u6001"],
+        ["The auth console stores the current access token in <code>localStorage</code> and reuses it for authenticated requests.", "\u8ba4\u8bc1\u533a\u4f1a\u628a\u5f53\u524d\u8bbf\u95ee\u4ee4\u724c\u4fdd\u5b58\u5728 <code>localStorage</code> \u4e2d\uff0c\u5e76\u5728\u540e\u7eed\u9700\u8981\u9274\u6743\u7684\u8bf7\u6c42\u91cc\u81ea\u52a8\u590d\u7528\u3002"],
+        ["Not checked", "\u672a\u68c0\u67e5"],
+        ["System", "\u7cfb\u7edf\u72b6\u6001"],
+        ["Environment", "\u73af\u5883\u4fe1\u606f"],
+        ["Shows service, runtime, and basic health information.", "\u7528\u4e8e\u67e5\u770b\u670d\u52a1\u72b6\u6001\u3001\u8fd0\u884c\u73af\u5883\u548c\u57fa\u7840\u5065\u5eb7\u4fe1\u606f\u3002"],
+        ["Run health check", "\u6267\u884c\u5065\u5eb7\u68c0\u67e5"],
+        ["Health result", "\u5065\u5eb7\u68c0\u67e5\u7ed3\u679c"],
+        ["Calls <code>GET /api/health</code> and renders the returned <code>HealthCheckVO</code>.", "\u8c03\u7528 <code>GET /api/health</code>\uff0c\u5e76\u5c55\u793a\u540e\u7aef\u8fd4\u56de\u7684 <code>HealthCheckVO</code>\u3002"],
+        ["Click the button to fetch /api/health", "\u70b9\u51fb\u6309\u94ae\u540e\u83b7\u53d6 /api/health \u7684\u7ed3\u679c"],
+        ["Auth", "\u8ba4\u8bc1"],
+        ["Current state", "\u5f53\u524d\u72b6\u6001"],
+        ["Stored token", "\u5df2\u4fdd\u5b58\u4ee4\u724c"],
+        ["Username", "\u7528\u6237\u540d"],
+        ["Nickname", "\u6635\u79f0"],
+        ["Password", "\u5bc6\u7801"],
+        ["Avatar", "\u5934\u50cf"],
+        ["At least 6 characters", "\u81f3\u5c11 6 \u4f4d\u5b57\u7b26"],
+        ["data-loading-label=\"Registering...\"", "data-loading-label=\"\u6ce8\u518c\u4e2d...\""],
+        ["Register", "\u6ce8\u518c"],
+        ["data-loading-label=\"Logging in...\"", "data-loading-label=\"\u767b\u5f55\u4e2d...\""],
+        ["Login", "\u767b\u5f55"],
+        ["data-loading-label=\"Fetching user...\"", "data-loading-label=\"\u83b7\u53d6\u4e2d...\""],
+        ["Current user", "\u5f53\u524d\u7528\u6237"],
+        ["Clear token", "\u6e05\u9664\u4ee4\u724c"],
+        ["Auth result", "\u8ba4\u8bc1\u7ed3\u679c"],
+        ["Displays register, login, and current-user results as formatted JSON.", "\u5c55\u793a\u6ce8\u518c\u3001\u767b\u5f55\u548c\u5f53\u524d\u7528\u6237\u63a5\u53e3\u8fd4\u56de\u7684\u683c\u5f0f\u5316 JSON \u7ed3\u679c\u3002"],
+        ["Run register, login, or current user actions", "\u6267\u884c\u6ce8\u518c\u3001\u767b\u5f55\u6216\u5f53\u524d\u7528\u6237\u64cd\u4f5c\u540e\uff0c\u8fd9\u91cc\u4f1a\u663e\u793a\u7ed3\u679c"],
+        ["Upload", "\u8d44\u6599\u4e0a\u4f20"],
+        ["Covers direct upload, chunk session lifecycle, and material lookup APIs.", "\u8986\u76d6\u666e\u901a\u4e0a\u4f20\u3001\u5206\u7247\u4e0a\u4f20\u4f1a\u8bdd\u751f\u547d\u5468\u671f\u548c\u8d44\u6599\u67e5\u8be2\u76f8\u5173\u63a5\u53e3\u3002"],
+        ["File", "\u6587\u4ef6"],
+        ["data-loading-label=\"Uploading...\"", "data-loading-label=\"\u4e0a\u4f20\u4e2d...\""],
+        ["Upload material", "\u666e\u901a\u4e0a\u4f20\u8d44\u6599"],
+        ["Upload file", "\u4e0a\u4f20\u6587\u4ef6"],
+        ["Select a file to call /api/materials/upload", "\u9009\u62e9\u4e00\u4e2a\u6587\u4ef6\u540e\u8c03\u7528 /api/materials/upload"],
+        ["Init chunk upload", "\u521d\u59cb\u5316\u5206\u7247\u4e0a\u4f20"],
+        ["Reference file", "\u53c2\u8003\u6587\u4ef6"],
+        ["File name", "\u6587\u4ef6\u540d"],
+        ["File size", "\u6587\u4ef6\u5927\u5c0f"],
+        ["Total chunks", "\u603b\u5206\u7247\u6570"],
+        ["data-loading-label=\"Initializing...\"", "data-loading-label=\"\u521d\u59cb\u5316\u4e2d...\""],
+        ["Init upload", "\u521d\u59cb\u5316\u4e0a\u4f20"],
+        ["Fill fileName, fileSize, totalChunks, and fileMd5", "\u586b\u5199 fileName\u3001fileSize\u3001totalChunks \u548c fileMd5 \u540e\u521d\u59cb\u5316\u4e0a\u4f20"],
+        ["Upload one chunk", "\u4e0a\u4f20\u5355\u4e2a\u5206\u7247"],
+        ["Upload ID", "\u4e0a\u4f20\u4f1a\u8bdd ID"],
+        ["Chunk index", "\u5206\u7247\u7d22\u5f15"],
+        ["Chunk file", "\u5206\u7247\u6587\u4ef6"],
+        ["data-loading-label=\"Uploading chunk...\"", "data-loading-label=\"\u5206\u7247\u4e0a\u4f20\u4e2d...\""],
+        ["Upload chunk", "\u4e0a\u4f20\u5206\u7247"],
+        ["Upload one chunk with uploadId, chunkIndex, and chunk", "\u4f7f\u7528 uploadId\u3001chunkIndex \u548c chunk \u6587\u4ef6\u4e0a\u4f20\u5355\u4e2a\u5206\u7247"],
+        ["Uploaded chunks", "\u5df2\u4e0a\u4f20\u5206\u7247"],
+        ["Check chunks", "\u67e5\u8be2\u5206\u7247"],
+        ["Query the uploaded chunk indexes for the latest uploadId", "\u67e5\u8be2\u5f53\u524d uploadId \u5df2\u6210\u529f\u4e0a\u4f20\u7684\u5206\u7247\u7d22\u5f15"],
+        ["data-loading-label=\"Completing...\"", "data-loading-label=\"\u5408\u5e76\u4e2d...\""],
+        ["Complete upload", "\u5b8c\u6210\u4e0a\u4f20"],
+        ["Material detail", "\u8d44\u6599\u8be6\u60c5"],
+        ["Get detail", "\u67e5\u8be2\u8be6\u60c5"],
+        ["Fetch one material detail by materialId", "\u6839\u636e materialId \u67e5\u8be2\u5355\u4e2a\u8d44\u6599\u8be6\u60c5"],
+        ["My materials", "\u6211\u7684\u8d44\u6599\u5217\u8868"],
+        ["Material type", "\u8d44\u6599\u7c7b\u578b"],
+        ["Parse status", "\u89e3\u6790\u72b6\u6001"],
+        ["Optional materialType", "\u53ef\u9009 materialType"],
+        ["Optional parseStatus", "\u53ef\u9009 parseStatus"],
+        ["data-loading-label=\"Listing materials...\"", "data-loading-label=\"\u67e5\u8be2\u4e2d...\""],
+        ["List materials", "\u67e5\u8be2\u5217\u8868"],
+        ["Parse", "\u89e3\u6790\u7ed3\u679c"],
+        ["Parse pipeline", "\u89e3\u6790\u94fe\u8def"],
+        ["data-loading-label=\"Loading tasks...\"", "data-loading-label=\"\u52a0\u8f7d\u4e2d...\""],
+        ["data-loading-label=\"Dispatching...\"", "data-loading-label=\"\u6d3e\u53d1\u4e2d...\""],
+        ["data-loading-label=\"Loading content...\"", "data-loading-label=\"\u52a0\u8f7d\u4e2d...\""],
+        ["data-loading-label=\"Loading summary...\"", "data-loading-label=\"\u52a0\u8f7d\u4e2d...\""],
+        ["data-loading-label=\"Generating summary...\"", "data-loading-label=\"\u751f\u6210\u4e2d...\""],
+        ["data-loading-label=\"Loading transcript...\"", "data-loading-label=\"\u52a0\u8f7d\u4e2d...\""],
+        ["Q&A", "\u8d44\u6599\u95ee\u7b54"],
+        ["RAG QA", "\u0052\u0041\u0047 \u95ee\u7b54"],
+        ["data-loading-label=\"Creating session...\"", "data-loading-label=\"\u521b\u5efa\u4e2d...\""],
+        ["Study", "\u5b66\u4e60\u8f85\u52a9"],
+        ["Study flow", "\u5b66\u4e60\u8f85\u52a9"],
+        ["Session name", "\u4f1a\u8bdd\u540d\u79f0"],
+        ["Optional session name", "\u53ef\u9009\u4f1a\u8bdd\u540d\u79f0"],
+        ["Session ID", "\u4f1a\u8bdd ID"],
+        ["Top K", "\u53ec\u56de Top K"],
+        ["Question", "\u95ee\u9898"],
+        ["What are the key concepts in this material?", "\u8fd9\u4efd\u8d44\u6599\u7684\u6838\u5fc3\u77e5\u8bc6\u70b9\u662f\u4ec0\u4e48\uff1f"],
+        ["data-loading-label=\"Asking...\"", "data-loading-label=\"\u63d0\u95ee\u4e2d...\""],
+        ["Submit question", "\u63d0\u4ea4\u95ee\u9898"],
+        ["History", "\u4f1a\u8bdd\u5386\u53f2"],
+        ["Latest sessionId auto-fills here", "\u8fd9\u91cc\u4f1a\u81ea\u52a8\u56de\u586b\u6700\u8fd1\u4e00\u6b21\u7684 sessionId"],
+        ["data-loading-label=\"Loading history...\"", "data-loading-label=\"\u52a0\u8f7d\u4e2d...\""],
+        ["Load history", "\u52a0\u8f7d\u5386\u53f2"],
+        ["Plan name", "\u8ba1\u5212\u540d\u79f0"],
+        ["data-loading-label=\"Generating outline...\"", "data-loading-label=\"\u751f\u6210\u4e2d...\""],
+        ["Exam date", "\u8003\u8bd5\u65e5\u671f"],
+        ["data-loading-label=\"Generating plan...\"", "data-loading-label=\"\u751f\u6210\u4e2d...\""],
+        ["Plan detail", "\u8ba1\u5212\u8be6\u60c5"],
+        ["Plan ID", "\u8ba1\u5212 ID"],
+        ["Plan history", "\u8ba1\u5212\u5386\u53f2"],
+        ["Plan type", "\u8ba1\u5212\u7c7b\u578b"],
+        ["Failure", "\u5931\u8d25\u6cbb\u7406"],
+        ["Failure monitor", "\u5931\u8d25\u76d1\u63a7"],
+        ["Record status", "\u8bb0\u5f55\u72b6\u6001"],
+        ["data-loading-label=\"Loading failures...\"", "data-loading-label=\"\u52a0\u8f7d\u4e2d...\""],
+        ["Compensate failure", "\u8865\u507f\u5931\u8d25\u4efb\u52a1"],
+        ["Record ID", "\u8bb0\u5f55 ID"],
+        ["data-loading-label=\"Compensating...\"", "data-loading-label=\"\u8865\u507f\u4e2d...\""],
+        ["Global log", "\u5168\u5c40\u65e5\u5fd7"],
+        ["Request log", "\u8bf7\u6c42\u65e5\u5fd7"],
+        ["Waiting for request activity.", "\u7b49\u5f85\u8bf7\u6c42\u4ea7\u751f..."]
+    ];
+
+    const currentHtml = document.body.innerHTML;
+    document.body.innerHTML = replacements.reduce((html, [source, target]) => html.split(source).join(target), currentHtml);
+}
 
 function getToken() {
     return localStorage.getItem(STORAGE_KEYS.token) || "";
@@ -128,7 +250,7 @@ function setButtonBusy(button, busy) {
     }
 
     button.disabled = busy;
-    button.textContent = busy ? (button.dataset.loadingLabel || "Working...") : button.dataset.defaultLabel;
+    button.textContent = busy ? (button.dataset.loadingLabel || "\u5904\u7406\u4e2d...") : button.dataset.defaultLabel;
 }
 
 function buildLogLine({ method, path, ok, message }) {
@@ -241,13 +363,13 @@ async function apiRequest(path, options = {}) {
         });
         payload = await readResponseBody(response);
     } catch (error) {
-        const networkMessage = error instanceof Error ? error.message : "Unknown network error";
+        const networkMessage = error instanceof Error ? error.message : "\u672a\u77e5\u7f51\u7edc\u9519\u8bef";
         writeLog({ method, path, ok: false, message: networkMessage });
         throw createRequestError(networkMessage, { cause: error, method, path });
     }
 
     if (!payload || typeof payload !== "object" || !("code" in payload)) {
-        const invalidMessage = "Invalid Result payload";
+        const invalidMessage = "\u8fd4\u56de\u7ed3\u679c\u683c\u5f0f\u4e0d\u6b63\u786e";
         writeLog({ method, path, ok: false, message: invalidMessage });
         throw createRequestError(invalidMessage, { result: payload, response, method, path });
     }
@@ -273,15 +395,15 @@ function updateTokenStatus() {
     const authCard = getAuthCard();
     const authStatus = authCard ? authCard.querySelector("[data-role='auth-status']") : null;
     const tokenEcho = authCard ? authCard.querySelector("[data-role='token-echo']") : null;
-    const tokenSummary = token ? `${token.slice(0, 16)}${token.length > 16 ? "..." : ""}` : "Stored in localStorage only";
+    const tokenSummary = token ? `${token.slice(0, 16)}${token.length > 16 ? "..." : ""}` : "\u4ec5\u4fdd\u5b58\u5728 localStorage";
 
     if (tokenStatus) {
-        tokenStatus.textContent = token ? "Token loaded" : "No token";
+        tokenStatus.textContent = token ? "\u5df2\u52a0\u8f7d\u4ee4\u724c" : "\u672a\u68c0\u6d4b\u5230\u4ee4\u724c";
         tokenStatus.classList.toggle("status-pill-muted", !token);
     }
 
     if (authStatus) {
-        authStatus.textContent = token ? "Authorized locally" : "Anonymous";
+        authStatus.textContent = token ? "\u672c\u5730\u5df2\u6388\u6743" : "\u672a\u767b\u5f55";
     }
 
     if (tokenEcho) {
@@ -526,13 +648,13 @@ async function handleCurrentUser(button, output) {
 function handleClearToken(output) {
     clearToken();
     updateTokenStatus();
-    renderJson(output, { message: "Token cleared" });
-    writeLog({
-        method: "LOCAL",
-        path: "localStorage",
-        ok: true,
-        message: "Cleared access token"
-    });
+        renderJson(output, { message: "\u4ee4\u724c\u5df2\u6e05\u9664" });
+        writeLog({
+            method: "LOCAL",
+            path: "localStorage",
+            ok: true,
+            message: "\u5df2\u6e05\u9664\u8bbf\u95ee\u4ee4\u724c"
+        });
 }
 
 async function handleMaterialUpload(form, button, output) {
@@ -1270,6 +1392,7 @@ function bindFailureActions() {
 }
 
 function bootstrap() {
+    applyChineseConsoleLocale();
     updateTokenStatus();
     bindLatestValueInputs();
     fillLatestValues();
@@ -1284,7 +1407,7 @@ function bootstrap() {
         method: "BOOT",
         path: "/index.html",
         ok: true,
-        message: "Static console initialized"
+        message: "\u9759\u6001\u6d4b\u8bd5\u53f0\u5df2\u521d\u59cb\u5316"
     });
 }
 

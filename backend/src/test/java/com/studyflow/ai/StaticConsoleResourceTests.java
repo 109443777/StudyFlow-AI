@@ -22,13 +22,13 @@ class StaticConsoleResourceTests {
     void shouldServeIndexHtmlForStaticConsole() throws Exception {
         mockMvc.perform(get("/index.html"))
                 .andExpect(status().isOk())
-                .andExpect(content().string(containsString("StudyFlow AI")));
+                .andExpect(content().string(containsString("<html lang=\"zh-CN\">")));
     }
 
     @Test
     void shouldServeAppJsForStaticConsole() throws Exception {
         mockMvc.perform(get("/app.js"))
                 .andExpect(status().isOk())
-                .andExpect(content().string(containsString("apiRequest")));
+                .andExpect(content().string(containsString("applyChineseConsoleLocale")));
     }
 }
