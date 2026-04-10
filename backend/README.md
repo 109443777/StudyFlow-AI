@@ -110,8 +110,29 @@ PowerShell:
 
 - Swagger UI: `http://localhost:8080/swagger-ui/index.html`
 - Health API: `http://localhost:8080/api/health`
+- Static test console: `http://localhost:8080/index.html`
 - RabbitMQ Management: `http://localhost:15672`
 - MinIO Console: `http://localhost:9001`
+
+## Static Test Console
+
+Before using the static test console, make sure `docker compose up -d` has started the required Docker services (`MySQL`, `Redis`, `RabbitMQ`, and `MinIO`), and that the backend service is running.
+
+Open the console at:
+
+```text
+http://localhost:8080/index.html
+```
+
+Recommended usage order:
+
+1. Health check (no login required)
+2. Login
+3. Upload
+4. Parse query
+5. Q&A
+6. Study plan
+7. Failure compensation
 
 ## Default Infra Credentials
 

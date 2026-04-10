@@ -1,0 +1,1119 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StudyFlow AI</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<main class="app-shell">
+    <header class="hero">
+        <div class="hero-copy">
+            <p class="eyebrow">StudyFlow AI test console</p>
+            <h1>StudyFlow AI</h1>
+            <p class="hero-subtitle">
+                A static shell for auth, upload, parse, QA, study flow, and failure review. This console now supports health checks, auth flows, current-user queries, and request logs.
+            </p>
+        </div>
+        <aside class="hero-status" aria-label="token status">
+            <span class="status-label">Token status</span>
+            <strong
+                id="tokenStatus"
+                class="status-pill status-pill-muted"
+                data-role="hero-token-status"
+                aria-live="polite"
+                aria-atomic="true"
+            >
+                Not checked
+            </strong>
+            <p class="status-hint">The auth console stores the current access token in <code>localStorage</code> and reuses it for authenticated requests.</p>
+        </aside>
+    </header>
+
+    <section class="dashboard" aria-label="console dashboard">
+        <article class="card" id="systemCard">
+            <header class="card-header">
+                <h2>System</h2>
+                <span class="status-pill">Environment</span>
+            </header>
+            <div class="card-body">
+                <p class="card-description">Shows service, runtime, and basic health information.</p>
+                <div class="card-actions">
+                    <button
+                        class="btn"
+                        id="healthCheckButton"
+                        type="button"
+                        data-action="health-check"
+                        data-loading-label="Checking health..."
+                    >
+                        Run health check
+                    </button>
+                </div>
+                <div class="result-panel" aria-live="polite" data-role="system-result-panel">
+                    <p class="placeholder-title">Health result</p>
+                    <p class="placeholder-text">Calls <code>GET /api/health</code> and renders the returned <code>HealthCheckVO</code>.</p>
+                    <pre id="healthResult" class="result-json" data-result="health">{
+  "message": "Click the button to fetch /api/health"
+}</pre>
+                </div>
+            </div>
+        </article>
+
+        <article class="card" id="authCard">
+            <header class="card-header">
+                <h2>Auth</h2>
+                <span class="status-pill">Auth</span>
+            </header>
+            <div class="card-body">
+                <section class="auth-summary" data-role="auth-summary">
+                    <div class="field">
+                        <span class="field-label">Current state</span>
+                        <output class="status-display" data-role="auth-status" aria-live="polite" aria-atomic="true">Not checked</output>
+                    </div>
+                    <div class="field">
+                        <span class="field-label">Stored token</span>
+                        <output class="status-display status-display-mono" data-role="token-echo" aria-live="polite" aria-atomic="true">Stored in localStorage only</output>
+                    </div>
+                </section>
+                <div class="auth-layout" data-role="auth-layout">
+                    <form id="registerForm" class="panel-form" data-form="register">
+                        <div class="panel-header">
+                            <h3>Register</h3>
+                            <span class="status-pill status-pill-muted">POST /api/auth/register</span>
+                        </div>
+                        <div class="form-grid">
+                            <label class="field">
+                                <span class="field-label">Username</span>
+                                <input class="field-control" id="registerUsername" name="username" type="text" placeholder="alice_01" required>
+                            </label>
+                            <label class="field">
+                                <span class="field-label">Nickname</span>
+                                <input class="field-control" id="registerNickname" name="nickname" type="text" placeholder="Alice" required>
+                            </label>
+                            <label class="field">
+                                <span class="field-label">Password</span>
+                                <input class="field-control" id="registerPassword" name="password" type="password" placeholder="At least 6 characters" required>
+                            </label>
+                            <label class="field">
+                                <span class="field-label">Avatar</span>
+                                <input class="field-control" id="registerAvatar" name="avatar" type="url" placeholder="https://cdn.example.com/avatar.png">
+                            </label>
+                        </div>
+                        <div class="card-actions">
+                            <button
+                                class="btn"
+                                id="registerButton"
+                                type="submit"
+                                data-action="register"
+                                data-loading-label="Registering..."
+                            >
+                                Register
+                            </button>
+                        </div>
+                    </form>
+
+                    <form id="loginForm" class="panel-form" data-form="login">
+                        <div class="panel-header">
+                            <h3>Login</h3>
+                            <span class="status-pill status-pill-muted">POST /api/auth/login</span>
+                        </div>
+                        <div class="form-grid">
+                            <label class="field">
+                                <span class="field-label">Username</span>
+                                <input class="field-control" id="loginUsername" name="username" type="text" placeholder="alice_01" required>
+                            </label>
+                            <label class="field">
+                                <span class="field-label">Password</span>
+                                <input class="field-control" id="loginPassword" name="password" type="password" placeholder="studyflow123" required>
+                            </label>
+                        </div>
+                        <div class="card-actions">
+                            <button
+                                class="btn"
+                                id="loginButton"
+                                type="submit"
+                                data-action="login"
+                                data-loading-label="Logging in..."
+                            >
+                                Login
+                            </button>
+                            <button
+                                class="btn btn-secondary"
+                                id="currentUserButton"
+                                type="button"
+                                data-action="current-user"
+                                data-loading-label="Fetching user..."
+                            >
+                                Current user
+                            </button>
+                            <button
+                                class="btn btn-secondary"
+                                id="clearTokenButton"
+                                type="button"
+                                data-action="clear-token"
+                            >
+                                Clear token
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                <div class="result-panel" data-role="auth-result-panel">
+                    <p class="placeholder-title">Auth result</p>
+                    <p class="placeholder-text">Displays register, login, and current-user results as formatted JSON.</p>
+                    <pre
+                        id="authResult"
+                        class="result-json"
+                        data-result="auth"
+                        aria-live="polite"
+                        aria-atomic="true"
+                    >{
+  "message": "Run register, login, or current user actions"
+}</pre>
+                </div>
+            </div>
+        </article>
+
+        <article class="card" id="uploadCard">
+            <header class="card-header">
+                <h2>Upload</h2>
+                <span class="status-pill">Upload</span>
+            </header>
+            <div class="card-body">
+                <p class="card-description">Covers direct upload, chunk session lifecycle, and material lookup APIs.</p>
+                <div class="operation-grid" data-role="upload-operations">
+                    <form class="panel-form operation-panel" id="materialUploadForm" data-form="material-upload">
+                        <div class="panel-header">
+                            <h3>Upload material</h3>
+                            <span class="status-pill status-pill-muted">POST /api/materials/upload</span>
+                        </div>
+                        <div class="form-grid">
+                            <label class="field field-full">
+                                <span class="field-label">File</span>
+                                <input
+                                    class="field-control"
+                                    id="materialUploadFile"
+                                    data-hook="material-upload-file"
+                                    name="file"
+                                    type="file"
+                                    required
+                                >
+                            </label>
+                        </div>
+                        <div class="card-actions">
+                            <button
+                                class="btn"
+                                id="materialUploadButton"
+                                type="submit"
+                                data-action="material-upload"
+                                data-loading-label="Uploading..."
+                            >
+                                Upload file
+                            </button>
+                        </div>
+                        <pre id="materialUploadResult" class="result-json" data-result="material-upload">{
+  "message": "Select a file to call /api/materials/upload"
+}</pre>
+                    </form>
+
+                    <form class="panel-form operation-panel" id="uploadInitForm" data-form="upload-init">
+                        <div class="panel-header">
+                            <h3>Init chunk upload</h3>
+                            <span class="status-pill status-pill-muted">POST /api/material-uploads/init</span>
+                        </div>
+                        <div class="form-grid">
+                            <label class="field field-full">
+                                <span class="field-label">Reference file</span>
+                                <input
+                                    class="field-control"
+                                    id="chunkInitFile"
+                                    data-hook="chunk-init-file"
+                                    type="file"
+                                >
+                            </label>
+                            <label class="field">
+                                <span class="field-label">File name</span>
+                                <input class="field-control" id="chunkFileName" data-hook="chunk-file-name" type="text" placeholder="lecture-notes.pdf" required>
+                            </label>
+                            <label class="field">
+                                <span class="field-label">File size</span>
+                                <input class="field-control" id="chunkFileSize" data-hook="chunk-file-size" type="number" min="1" placeholder="102400" required>
+                            </label>
+                            <label class="field">
+                                <span class="field-label">Total chunks</span>
+                                <input class="field-control" id="chunkTotalChunks" data-hook="chunk-total-chunks" type="number" min="1" placeholder="4" required>
+                            </label>
+                            <label class="field">
+                                <span class="field-label">File MD5</span>
+                                <input class="field-control" id="chunkFileMd5" data-hook="chunk-file-md5" type="text" placeholder="32 hex chars" minlength="32" maxlength="32" required>
+                            </label>
+                        </div>
+                        <div class="card-actions">
+                            <button
+                                class="btn"
+                                id="uploadInitButton"
+                                type="submit"
+                                data-action="upload-init"
+                                data-loading-label="Initializing..."
+                            >
+                                Init upload
+                            </button>
+                        </div>
+                        <pre id="uploadInitResult" class="result-json" data-result="upload-init">{
+  "message": "Fill fileName, fileSize, totalChunks, and fileMd5"
+}</pre>
+                    </form>
+
+                    <form class="panel-form operation-panel" id="uploadChunkForm" data-form="upload-chunk">
+                        <div class="panel-header">
+                            <h3>Upload one chunk</h3>
+                            <span class="status-pill status-pill-muted">POST /api/material-uploads/chunk</span>
+                        </div>
+                        <div class="form-grid">
+                            <label class="field">
+                                <span class="field-label">Upload ID</span>
+                                <input
+                                    class="field-control"
+                                    id="chunkUploadIdInput"
+                                    data-hook="upload-id-input"
+                                    data-latest-key="uploadId"
+                                    type="text"
+                                    placeholder="Paste uploadId"
+                                    required
+                                >
+                            </label>
+                            <label class="field">
+                                <span class="field-label">Chunk index</span>
+                                <input class="field-control" id="chunkIndexInput" data-hook="chunk-index-input" type="number" min="0" placeholder="0" required>
+                            </label>
+                            <label class="field field-full">
+                                <span class="field-label">Chunk file</span>
+                                <input class="field-control" id="chunkFileInput" data-hook="chunk-file-input" type="file" required>
+                            </label>
+                        </div>
+                        <div class="card-actions">
+                            <button
+                                class="btn"
+                                id="uploadChunkButton"
+                                type="submit"
+                                data-action="upload-chunk"
+                                data-loading-label="Uploading chunk..."
+                            >
+                                Upload chunk
+                            </button>
+                        </div>
+                        <pre id="uploadChunkResult" class="result-json" data-result="upload-chunk">{
+  "message": "Upload one chunk with uploadId, chunkIndex, and chunk"
+}</pre>
+                    </form>
+
+                    <section class="panel-form operation-panel" data-panel="uploaded-chunks">
+                        <div class="panel-header">
+                            <h3>Uploaded chunks</h3>
+                            <span class="status-pill status-pill-muted">GET /api/material-uploads/{uploadId}/chunks</span>
+                        </div>
+                        <div class="form-grid">
+                            <label class="field field-full">
+                                <span class="field-label">Upload ID</span>
+                                <input
+                                    class="field-control"
+                                    id="uploadedChunksUploadIdInput"
+                                    data-hook="uploaded-chunks-upload-id"
+                                    data-latest-key="uploadId"
+                                    type="text"
+                                    placeholder="Paste uploadId"
+                                >
+                            </label>
+                        </div>
+                        <div class="card-actions">
+                            <button
+                                class="btn btn-secondary"
+                                id="uploadedChunksButton"
+                                type="button"
+                                data-action="uploaded-chunks"
+                                data-loading-label="Checking chunks..."
+                            >
+                                Check chunks
+                            </button>
+                        </div>
+                        <pre id="uploadedChunksResult" class="result-json" data-result="uploaded-chunks">{
+  "message": "Query the uploaded chunk indexes for the latest uploadId"
+}</pre>
+                    </section>
+
+                    <form class="panel-form operation-panel" id="completeUploadForm" data-form="complete-upload">
+                        <div class="panel-header">
+                            <h3>Complete upload</h3>
+                            <span class="status-pill status-pill-muted">POST /api/material-uploads/complete</span>
+                        </div>
+                        <div class="form-grid">
+                            <label class="field field-full">
+                                <span class="field-label">Upload ID</span>
+                                <input
+                                    class="field-control"
+                                    id="completeUploadIdInput"
+                                    data-hook="complete-upload-id"
+                                    data-latest-key="uploadId"
+                                    type="text"
+                                    placeholder="Paste uploadId"
+                                    required
+                                >
+                            </label>
+                        </div>
+                        <div class="card-actions">
+                            <button
+                                class="btn"
+                                id="completeUploadButton"
+                                type="submit"
+                                data-action="complete-upload"
+                                data-loading-label="Completing..."
+                            >
+                                Complete upload
+                            </button>
+                        </div>
+                        <pre id="completeUploadResult" class="result-json" data-result="complete-upload">{
+  "message": "Complete the current chunk session and receive the material record"
+}</pre>
+                    </form>
+
+                    <section class="panel-form operation-panel" data-panel="material-detail">
+                        <div class="panel-header">
+                            <h3>Material detail</h3>
+                            <span class="status-pill status-pill-muted">GET /api/materials/{materialId}</span>
+                        </div>
+                        <div class="form-grid">
+                            <label class="field field-full">
+                                <span class="field-label">Material ID</span>
+                                <input
+                                    class="field-control"
+                                    id="materialDetailIdInput"
+                                    data-hook="material-id-input"
+                                    data-latest-key="materialId"
+                                    type="number"
+                                    min="1"
+                                    placeholder="Latest materialId auto-fills here"
+                                >
+                            </label>
+                        </div>
+                        <div class="card-actions">
+                            <button
+                                class="btn btn-secondary"
+                                id="materialDetailButton"
+                                type="button"
+                                data-action="material-detail"
+                                data-loading-label="Loading detail..."
+                            >
+                                Get detail
+                            </button>
+                        </div>
+                        <pre id="materialDetailResult" class="result-json" data-result="material-detail">{
+  "message": "Fetch one material detail by materialId"
+}</pre>
+                    </section>
+
+                    <form class="panel-form operation-panel" id="materialListForm" data-form="material-list">
+                        <div class="panel-header">
+                            <h3>My materials</h3>
+                            <span class="status-pill status-pill-muted">GET /api/materials/my</span>
+                        </div>
+                        <div class="form-grid">
+                            <label class="field">
+                                <span class="field-label">Material type</span>
+                                <input class="field-control" id="materialListTypeInput" data-hook="material-type-input" type="text" placeholder="DOCUMENT / VIDEO / AUDIO">
+                            </label>
+                            <label class="field">
+                                <span class="field-label">Parse status</span>
+                                <input class="field-control" id="materialListParseStatusInput" data-hook="material-parse-status-input" type="text" placeholder="PENDING / SUCCESS / FAILED">
+                            </label>
+                        </div>
+                        <div class="card-actions">
+                            <button
+                                class="btn btn-secondary"
+                                id="materialListButton"
+                                type="submit"
+                                data-action="material-list"
+                                data-loading-label="Loading materials..."
+                            >
+                                List my materials
+                            </button>
+                        </div>
+                        <pre id="materialListResult" class="result-json" data-result="material-list">{
+  "message": "List my materials with optional materialType and parseStatus"
+}</pre>
+                    </form>
+                </div>
+            </div>
+        </article>
+
+        <article class="card" id="parseCard">
+            <header class="card-header">
+                <h2>Parse</h2>
+                <span class="status-pill">Parse</span>
+            </header>
+            <div class="card-body">
+                <p class="card-description">Tracks parse jobs and the derived text, summaries, and transcripts for a material.</p>
+                <div class="operation-grid" data-role="parse-operations">
+                    <form class="panel-form operation-panel" id="parseTaskListForm" data-form="parse-task-list">
+                        <div class="panel-header">
+                            <h3>Parse tasks</h3>
+                            <span class="status-pill status-pill-muted">GET /api/parse-tasks</span>
+                        </div>
+                        <div class="form-grid">
+                            <label class="field">
+                                <span class="field-label">Material ID</span>
+                                <input
+                                    class="field-control"
+                                    id="parseTaskMaterialIdInput"
+                                    data-hook="parse-task-material-id"
+                                    data-latest-key="materialId"
+                                    type="number"
+                                    min="1"
+                                    placeholder="Optional materialId"
+                                >
+                            </label>
+                            <label class="field">
+                                <span class="field-label">Task type</span>
+                                <input class="field-control" id="parseTaskTypeInput" data-hook="parse-task-type" type="text" placeholder="OCR / SUMMARY / TRANSCRIPT">
+                            </label>
+                            <label class="field field-full">
+                                <span class="field-label">Status</span>
+                                <input class="field-control" id="parseTaskStatusInput" data-hook="parse-task-status" type="text" placeholder="PENDING / RUNNING / SUCCESS / FAILED">
+                            </label>
+                        </div>
+                        <div class="card-actions">
+                            <button
+                                class="btn btn-secondary"
+                                id="parseTaskListButton"
+                                type="submit"
+                                data-action="parse-task-list"
+                                data-loading-label="Loading tasks..."
+                            >
+                                List tasks
+                            </button>
+                        </div>
+                        <pre id="parseTaskListResult" class="result-json" data-result="parse-task-list">{
+  "message": "Query parse tasks by materialId, taskType, or status"
+}</pre>
+                    </form>
+
+                    <section class="panel-form operation-panel" data-panel="dispatch-parse">
+                        <div class="panel-header">
+                            <h3>Dispatch parse</h3>
+                            <span class="status-pill status-pill-muted">POST /api/parse-tasks/materials/{materialId}/dispatch</span>
+                        </div>
+                        <div class="form-grid">
+                            <label class="field field-full">
+                                <span class="field-label">Material ID</span>
+                                <input
+                                    class="field-control"
+                                    id="dispatchMaterialIdInput"
+                                    data-hook="dispatch-material-id"
+                                    data-latest-key="materialId"
+                                    type="number"
+                                    min="1"
+                                    placeholder="Latest materialId auto-fills here"
+                                >
+                            </label>
+                        </div>
+                        <div class="card-actions">
+                            <button
+                                class="btn"
+                                id="dispatchParseButton"
+                                type="button"
+                                data-action="dispatch-parse"
+                                data-loading-label="Dispatching..."
+                            >
+                                Dispatch parse
+                            </button>
+                        </div>
+                        <pre id="dispatchParseResult" class="result-json" data-result="dispatch-parse">{
+  "message": "Manually dispatch the initial parse task for a material"
+}</pre>
+                    </section>
+
+                    <section class="panel-form operation-panel" data-panel="material-content">
+                        <div class="panel-header">
+                            <h3>Text content</h3>
+                            <span class="status-pill status-pill-muted">GET /api/material-contents?materialId=...</span>
+                        </div>
+                        <div class="form-grid">
+                            <label class="field field-full">
+                                <span class="field-label">Material ID</span>
+                                <input
+                                    class="field-control"
+                                    id="materialContentIdInput"
+                                    data-hook="material-content-id"
+                                    data-latest-key="materialId"
+                                    type="number"
+                                    min="1"
+                                    placeholder="Latest materialId auto-fills here"
+                                >
+                            </label>
+                        </div>
+                        <div class="card-actions">
+                            <button
+                                class="btn btn-secondary"
+                                id="materialContentButton"
+                                type="button"
+                                data-action="material-content"
+                                data-loading-label="Loading content..."
+                            >
+                                Get content
+                            </button>
+                        </div>
+                        <pre id="materialContentResult" class="result-json" data-result="material-content">{
+  "message": "Fetch parsed text content for the current material"
+}</pre>
+                    </section>
+
+                    <section class="panel-form operation-panel" data-panel="material-summary">
+                        <div class="panel-header">
+                            <h3>Summary</h3>
+                            <span class="status-pill status-pill-muted">GET /api/material-summaries</span>
+                        </div>
+                        <div class="form-grid">
+                            <label class="field field-full">
+                                <span class="field-label">Material ID</span>
+                                <input
+                                    class="field-control"
+                                    id="materialSummaryIdInput"
+                                    data-hook="material-summary-id"
+                                    data-latest-key="materialId"
+                                    type="number"
+                                    min="1"
+                                    placeholder="Latest materialId auto-fills here"
+                                >
+                            </label>
+                        </div>
+                        <div class="card-actions">
+                            <button
+                                class="btn btn-secondary"
+                                id="materialSummaryButton"
+                                type="button"
+                                data-action="material-summary"
+                                data-loading-label="Loading summary..."
+                            >
+                                Get summary
+                            </button>
+                            <button
+                                class="btn"
+                                id="generateSummaryButton"
+                                type="button"
+                                data-action="generate-summary"
+                                data-loading-label="Generating summary..."
+                            >
+                                Generate summary
+                            </button>
+                        </div>
+                        <pre id="materialSummaryQueryResult" class="result-json" data-result="material-summary-query">{
+  "message": "Query the summary for the latest materialId"
+}</pre>
+                        <pre id="materialSummaryGenerateResult" class="result-json" data-result="material-summary-generate">{
+  "message": "Generate a summary for the latest materialId"
+}</pre>
+                    </section>
+
+                    <section class="panel-form operation-panel" data-panel="media-transcript">
+                        <div class="panel-header">
+                            <h3>Transcript</h3>
+                            <span class="status-pill status-pill-muted">GET /api/media-transcripts</span>
+                        </div>
+                        <div class="form-grid">
+                            <label class="field field-full">
+                                <span class="field-label">Material ID</span>
+                                <input
+                                    class="field-control"
+                                    id="mediaTranscriptIdInput"
+                                    data-hook="media-transcript-id"
+                                    data-latest-key="materialId"
+                                    type="number"
+                                    min="1"
+                                    placeholder="Latest materialId auto-fills here"
+                                >
+                            </label>
+                        </div>
+                        <div class="card-actions">
+                            <button
+                                class="btn btn-secondary"
+                                id="mediaTranscriptButton"
+                                type="button"
+                                data-action="media-transcript"
+                                data-loading-label="Loading transcript..."
+                            >
+                                Get transcript
+                            </button>
+                        </div>
+                        <pre id="mediaTranscriptResult" class="result-json" data-result="media-transcript">{
+  "message": "Fetch transcript details for media materials"
+}</pre>
+                    </section>
+                </div>
+            </div>
+        </article>
+
+        <article class="card" id="qaCard">
+            <header class="card-header">
+                <h2>QA</h2>
+                <span class="status-pill">QA</span>
+            </header>
+            <div class="card-body">
+                <p class="card-description">Creates QA sessions, submits RAG questions, and loads message history for the latest material.</p>
+                <div class="operation-grid" data-role="qa-operations">
+                    <form class="panel-form operation-panel" id="qaSessionCreateForm" data-form="qa-session-create">
+                        <div class="panel-header">
+                            <h3>Create session</h3>
+                            <span class="status-pill status-pill-muted">POST /api/qa/sessions</span>
+                        </div>
+                        <div class="form-grid">
+                            <label class="field">
+                                <span class="field-label">Material ID</span>
+                                <input
+                                    class="field-control"
+                                    id="qaSessionMaterialIdInput"
+                                    data-hook="qa-session-material-id"
+                                    data-latest-key="materialId"
+                                    type="number"
+                                    min="1"
+                                    placeholder="Latest materialId auto-fills here"
+                                    required
+                                >
+                            </label>
+                            <label class="field">
+                                <span class="field-label">Session name</span>
+                                <input
+                                    class="field-control"
+                                    id="qaSessionNameInput"
+                                    data-hook="qa-session-name"
+                                    type="text"
+                                    placeholder="Chapter 1 QA"
+                                >
+                            </label>
+                        </div>
+                        <div class="card-actions">
+                            <button
+                                class="btn"
+                                id="qaSessionCreateButton"
+                                type="submit"
+                                data-action="qa-session-create"
+                                data-loading-label="Creating session..."
+                            >
+                                Create session
+                            </button>
+                        </div>
+                        <pre id="qaSessionCreateResult" class="result-json" data-result="qa-session-create">{
+  "message": "Create a QA session for the latest material"
+}</pre>
+                    </form>
+
+                    <form class="panel-form operation-panel" id="qaAskForm" data-form="qa-ask">
+                        <div class="panel-header">
+                            <h3>Ask question</h3>
+                            <span class="status-pill status-pill-muted">POST /api/qa/sessions/{sessionId}/ask</span>
+                        </div>
+                        <div class="form-grid">
+                            <label class="field">
+                                <span class="field-label">Session ID</span>
+                                <input
+                                    class="field-control"
+                                    id="qaAskSessionIdInput"
+                                    data-hook="qa-session-id"
+                                    data-latest-key="sessionId"
+                                    type="number"
+                                    min="1"
+                                    placeholder="Latest sessionId auto-fills here"
+                                    required
+                                >
+                            </label>
+                            <label class="field">
+                                <span class="field-label">Top K</span>
+                                <input
+                                    class="field-control"
+                                    id="qaAskTopKInput"
+                                    data-hook="qa-top-k"
+                                    type="number"
+                                    min="1"
+                                    max="10"
+                                    value="4"
+                                    placeholder="4"
+                                >
+                            </label>
+                            <label class="field field-full">
+                                <span class="field-label">Question</span>
+                                <textarea
+                                    class="field-control"
+                                    id="qaAskQuestionInput"
+                                    data-hook="qa-question"
+                                    rows="4"
+                                    placeholder="What are the key concepts in this material?"
+                                    required
+                                ></textarea>
+                            </label>
+                        </div>
+                        <div class="card-actions">
+                            <button
+                                class="btn"
+                                id="qaAskButton"
+                                type="submit"
+                                data-action="qa-ask"
+                                data-loading-label="Asking..."
+                            >
+                                Submit question
+                            </button>
+                        </div>
+                        <pre id="qaAskResult" class="result-json" data-result="qa-ask">{
+  "message": "Ask a question and view the answer with references"
+}</pre>
+                    </form>
+
+                    <section class="panel-form operation-panel" data-panel="qa-history">
+                        <div class="panel-header">
+                            <h3>History</h3>
+                            <span class="status-pill status-pill-muted">GET /api/qa/sessions/{sessionId}/messages</span>
+                        </div>
+                        <div class="form-grid">
+                            <label class="field field-full">
+                                <span class="field-label">Session ID</span>
+                                <input
+                                    class="field-control"
+                                    id="qaHistorySessionIdInput"
+                                    data-hook="qa-history-session-id"
+                                    data-latest-key="sessionId"
+                                    type="number"
+                                    min="1"
+                                    placeholder="Latest sessionId auto-fills here"
+                                >
+                            </label>
+                        </div>
+                        <div class="card-actions">
+                            <button
+                                class="btn btn-secondary"
+                                id="qaHistoryButton"
+                                type="button"
+                                data-action="qa-history"
+                                data-loading-label="Loading history..."
+                            >
+                                Load history
+                            </button>
+                        </div>
+                        <pre id="qaHistoryResult" class="result-json" data-result="qa-history">{
+  "message": "Fetch the message history for one QA session"
+}</pre>
+                    </section>
+                </div>
+            </div>
+        </article>
+
+        <article class="card" id="studyCard">
+            <header class="card-header">
+                <h2>Study</h2>
+                <span class="status-pill">Study flow</span>
+            </header>
+            <div class="card-body">
+                <p class="card-description">Generates review outlines and exam plans, then queries plan details and history without overwriting adjacent results.</p>
+                <div class="operation-grid" data-role="study-operations">
+                    <form class="panel-form operation-panel" id="reviewOutlineForm" data-form="review-outline">
+                        <div class="panel-header">
+                            <h3>Generate review outline</h3>
+                            <span class="status-pill status-pill-muted">POST /api/study-plans/review-outline</span>
+                        </div>
+                        <div class="form-grid">
+                            <label class="field">
+                                <span class="field-label">Material ID</span>
+                                <input
+                                    class="field-control"
+                                    id="reviewOutlineMaterialIdInput"
+                                    data-hook="review-outline-material-id"
+                                    data-latest-key="materialId"
+                                    type="number"
+                                    min="1"
+                                    placeholder="Latest materialId auto-fills here"
+                                    required
+                                >
+                            </label>
+                            <label class="field">
+                                <span class="field-label">Plan name</span>
+                                <input
+                                    class="field-control"
+                                    id="reviewOutlinePlanNameInput"
+                                    data-hook="review-outline-plan-name"
+                                    type="text"
+                                    placeholder="Midterm review outline"
+                                >
+                            </label>
+                        </div>
+                        <div class="card-actions">
+                            <button
+                                class="btn"
+                                id="reviewOutlineButton"
+                                type="submit"
+                                data-action="review-outline"
+                                data-loading-label="Generating outline..."
+                            >
+                                Generate outline
+                            </button>
+                        </div>
+                        <pre id="reviewOutlineResult" class="result-json" data-result="review-outline">{
+  "message": "Generate a review outline for the selected material"
+}</pre>
+                    </form>
+
+                    <form class="panel-form operation-panel" id="examPlanForm" data-form="exam-plan">
+                        <div class="panel-header">
+                            <h3>Generate exam plan</h3>
+                            <span class="status-pill status-pill-muted">POST /api/study-plans/exam-plan</span>
+                        </div>
+                        <div class="form-grid">
+                            <label class="field">
+                                <span class="field-label">Material ID</span>
+                                <input
+                                    class="field-control"
+                                    id="examPlanMaterialIdInput"
+                                    data-hook="exam-plan-material-id"
+                                    data-latest-key="materialId"
+                                    type="number"
+                                    min="1"
+                                    placeholder="Latest materialId auto-fills here"
+                                    required
+                                >
+                            </label>
+                            <label class="field">
+                                <span class="field-label">Exam date</span>
+                                <input
+                                    class="field-control"
+                                    id="examPlanDateInput"
+                                    data-hook="exam-plan-date"
+                                    type="date"
+                                    required
+                                >
+                            </label>
+                            <label class="field field-full">
+                                <span class="field-label">Plan name</span>
+                                <input
+                                    class="field-control"
+                                    id="examPlanNameInput"
+                                    data-hook="exam-plan-name"
+                                    type="text"
+                                    placeholder="7-day final sprint"
+                                >
+                            </label>
+                        </div>
+                        <div class="card-actions">
+                            <button
+                                class="btn"
+                                id="examPlanButton"
+                                type="submit"
+                                data-action="exam-plan"
+                                data-loading-label="Generating plan..."
+                            >
+                                Generate exam plan
+                            </button>
+                        </div>
+                        <pre id="examPlanResult" class="result-json" data-result="exam-plan">{
+  "message": "Generate a 7-day exam plan with an examDate"
+}</pre>
+                    </form>
+
+                    <section class="panel-form operation-panel" data-panel="study-plan-detail">
+                        <div class="panel-header">
+                            <h3>Plan detail</h3>
+                            <span class="status-pill status-pill-muted">GET /api/study-plans/{planId}</span>
+                        </div>
+                        <div class="form-grid">
+                            <label class="field field-full">
+                                <span class="field-label">Plan ID</span>
+                                <input
+                                    class="field-control"
+                                    id="studyPlanDetailIdInput"
+                                    data-hook="study-plan-id"
+                                    type="number"
+                                    min="1"
+                                    placeholder="Paste planId"
+                                >
+                            </label>
+                        </div>
+                        <div class="card-actions">
+                            <button
+                                class="btn btn-secondary"
+                                id="studyPlanDetailButton"
+                                type="button"
+                                data-action="study-plan-detail"
+                                data-loading-label="Loading plan..."
+                            >
+                                Get detail
+                            </button>
+                        </div>
+                        <pre id="studyPlanDetailResult" class="result-json" data-result="study-plan-detail">{
+  "message": "Fetch one study plan detail by planId"
+}</pre>
+                    </section>
+
+                    <form class="panel-form operation-panel" id="studyPlanHistoryForm" data-form="study-plan-history">
+                        <div class="panel-header">
+                            <h3>Plan history</h3>
+                            <span class="status-pill status-pill-muted">GET /api/study-plans</span>
+                        </div>
+                        <div class="form-grid">
+                            <label class="field">
+                                <span class="field-label">Material ID</span>
+                                <input
+                                    class="field-control"
+                                    id="studyPlanHistoryMaterialIdInput"
+                                    data-hook="study-plan-history-material-id"
+                                    data-latest-key="materialId"
+                                    type="number"
+                                    min="1"
+                                    placeholder="Optional materialId"
+                                >
+                            </label>
+                            <label class="field">
+                                <span class="field-label">Plan type</span>
+                                <input
+                                    class="field-control"
+                                    id="studyPlanHistoryTypeInput"
+                                    data-hook="study-plan-type"
+                                    type="text"
+                                    placeholder="REVIEW_OUTLINE / EXAM_PLAN"
+                                >
+                            </label>
+                        </div>
+                        <div class="card-actions">
+                            <button
+                                class="btn btn-secondary"
+                                id="studyPlanHistoryButton"
+                                type="submit"
+                                data-action="study-plan-history"
+                                data-loading-label="Loading history..."
+                            >
+                                List history
+                            </button>
+                        </div>
+                        <pre id="studyPlanHistoryResult" class="result-json" data-result="study-plan-history">{
+  "message": "List study plans filtered by materialId or planType"
+}</pre>
+                    </form>
+                </div>
+            </div>
+        </article>
+
+        <article class="card" id="failureCard">
+            <header class="card-header">
+                <h2>Failure</h2>
+                <span class="status-pill status-pill-warn">Failure monitor</span>
+            </header>
+            <div class="card-body">
+                <p class="card-description">Lists failure records by material, task type, or status, and retries one failed task by record ID.</p>
+                <div class="operation-grid" data-role="failure-operations">
+                    <form class="panel-form operation-panel" id="failureListForm" data-form="failure-list">
+                        <div class="panel-header">
+                            <h3>Failure list</h3>
+                            <span class="status-pill status-pill-muted">GET /api/task-failures</span>
+                        </div>
+                        <div class="form-grid">
+                            <label class="field">
+                                <span class="field-label">Material ID</span>
+                                <input
+                                    class="field-control"
+                                    id="failureMaterialIdInput"
+                                    data-hook="failure-material-id"
+                                    data-latest-key="materialId"
+                                    type="number"
+                                    min="1"
+                                    placeholder="Optional materialId"
+                                >
+                            </label>
+                            <label class="field">
+                                <span class="field-label">Task type</span>
+                                <input
+                                    class="field-control"
+                                    id="failureTaskTypeInput"
+                                    data-hook="failure-task-type"
+                                    type="text"
+                                    placeholder="SUMMARY / OCR / TRANSCRIPT"
+                                >
+                            </label>
+                            <label class="field field-full">
+                                <span class="field-label">Record status</span>
+                                <input
+                                    class="field-control"
+                                    id="failureRecordStatusInput"
+                                    data-hook="failure-record-status"
+                                    type="text"
+                                    placeholder="OPEN / COMPENSATED"
+                                >
+                            </label>
+                        </div>
+                        <div class="card-actions">
+                            <button
+                                class="btn btn-secondary"
+                                id="failureListButton"
+                                type="submit"
+                                data-action="failure-list"
+                                data-loading-label="Loading failures..."
+                            >
+                                List failures
+                            </button>
+                        </div>
+                        <pre id="failureListResult" class="result-json" data-result="failure-list">{
+  "message": "Query task failures by materialId, taskType, or recordStatus"
+}</pre>
+                    </form>
+
+                    <form class="panel-form operation-panel" id="failureCompensateForm" data-form="failure-compensate">
+                        <div class="panel-header">
+                            <h3>Compensate failure</h3>
+                            <span class="status-pill status-pill-muted">POST /api/task-failures/{recordId}/compensate</span>
+                        </div>
+                        <div class="form-grid">
+                            <label class="field field-full">
+                                <span class="field-label">Record ID</span>
+                                <input
+                                    class="field-control"
+                                    id="failureRecordIdInput"
+                                    data-hook="failure-record-id"
+                                    type="number"
+                                    min="1"
+                                    placeholder="Paste failure recordId"
+                                    required
+                                >
+                            </label>
+                        </div>
+                        <div class="card-actions">
+                            <button
+                                class="btn"
+                                id="failureCompensateButton"
+                                type="submit"
+                                data-action="failure-compensate"
+                                data-loading-label="Compensating..."
+                            >
+                                Retry failure
+                            </button>
+                        </div>
+                        <pre id="failureCompensateResult" class="result-json" data-result="failure-compensate">{
+  "message": "Compensate one failure record by recordId"
+}</pre>
+                    </form>
+                </div>
+            </div>
+        </article>
+
+        <article class="card card-full" id="logCard">
+            <header class="card-header">
+                <h2>Log</h2>
+                <span class="status-pill">Global log</span>
+            </header>
+            <div class="card-body">
+                <div class="result-panel result-panel-log" aria-live="polite" data-role="log-panel">
+                    <p class="placeholder-title">Request log</p>
+                    <p class="placeholder-text">Every request writes method, path, success or failure, and the result message here.</p>
+                    <div id="globalLog" class="log-list" data-log-container>
+                        <div class="log-entry log-entry-placeholder" data-log-placeholder>Waiting for request activity.</div>
+                    </div>
+                </div>
+            </div>
+        </article>
+    </section>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>
