@@ -12,5 +12,15 @@ public class HealthCheckVO {
 
     private String status;
 
+    private String aiProvider;
+
+    private String embeddingProvider;
+
+    private String transcriptionProvider;
+
+    private String chatModel;
+
+    private String embeddingModel;
+
     private LocalDateTime timestamp;
 }

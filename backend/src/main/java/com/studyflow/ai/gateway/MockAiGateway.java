@@ -27,7 +27,10 @@ public class MockAiGateway implements AiGateway {
         List<String> keywords = extractKeywordsFromText(cleanedText);
         List<ChapterHighlight> chapterHighlights = buildChapterHighlights(sentences, keyPoints);
         List<String> reviewOutline = buildReviewOutline(keyPoints, keywords);
-        String summary = sentences.stream().limit(3).reduce((a, b) -> a + " " + b).orElse("暂无可用摘要。");
+        String summary = sentences.stream()
+                .limit(3)
+                .reduce((left, right) -> left + " " + right)
+                .orElse("暂无可用摘要。");
 
         return StudyContentAnalysisResult.builder()
                 .summary(summary)
@@ -45,17 +48,17 @@ public class MockAiGateway implements AiGateway {
                 .limit(3)
                 .toList();
         if (safeContexts.isEmpty()) {
-            return "I cannot answer from the uploaded material because no relevant study context was retrieved.";
+            return "无法基于已上传资料回答这个问题，因为当前没有检索到相关上下文。";
         }
         String normalizedQuestion = extractStudentQuestion(question);
         StringBuilder builder = new StringBuilder();
-        builder.append("Answer based on the uploaded study material:\n");
-        builder.append("Question: ").append(normalizedQuestion).append('\n');
-        builder.append("Relevant material points:\n");
-        for (int i = 0; i < safeContexts.size(); i++) {
-            builder.append(i + 1).append(". ").append(toStudyPoint(safeContexts.get(i))).append('\n');
+        builder.append("以下回答基于已上传学习资料：\n");
+        builder.append("问题：").append(normalizedQuestion).append('\n');
+        builder.append("相关资料片段：\n");
+        for (int index = 0; index < safeContexts.size(); index++) {
+            builder.append(index + 1).append(". ").append(toStudyPoint(safeContexts.get(index))).append('\n');
         }
-        builder.append("Conclusion: The answer above is grounded in the retrieved material excerpts.");
+        builder.append("结论：以上内容均来自检索到的资料片段，可继续结合原文复习。");
         return builder.toString().trim();
     }
 
@@ -120,15 +123,15 @@ public class MockAiGateway implements AiGateway {
 
     private List<String> buildReviewOutline(List<String> keyPoints, List<String> keywords) {
         Set<String> outline = new LinkedHashSet<>();
-        outline.add("先通读摘要，建立整体知识框架。");
+        outline.add("先通读摘要，建立整份资料的知识框架。");
         if (!keywords.isEmpty()) {
             outline.add("重点记忆关键词：" + String.join("、", keywords.stream().limit(5).toList()) + "。");
         }
         if (!keyPoints.isEmpty()) {
-            outline.add("按知识点逐条复述，并用自己的话解释概念。");
+            outline.add("按知识点逐条复述，并用自己的话解释核心概念。");
         }
-        outline.add("结合课堂例题或作业场景，验证是否真正理解。");
-        outline.add("最后做一次闭卷回忆，检查薄弱点并回看原文。");
+        outline.add("结合课堂例题、作业或实验场景验证是否真正理解。");
+        outline.add("最后做一次闭卷回忆，定位薄弱点后回看原文。");
         return outline.stream().toList();
     }
 }
