@@ -3,6 +3,7 @@ package com.studyflow.ai;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -34,14 +35,19 @@ import com.studyflow.ai.mapper.ParseTaskMapper;
 import com.studyflow.ai.mapper.UploadSessionMapper;
 import com.studyflow.ai.mapper.UserMapper;
 import com.studyflow.ai.mq.ParseTaskMessagePublisher;
+import com.studyflow.ai.service.MediaAudioExtractService;
 import com.studyflow.ai.service.ParseTaskService;
+import com.studyflow.ai.service.media.AudioExtractionResult;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -85,6 +91,12 @@ class MediaTranscriptionIntegrationTests {
     @MockBean
     private ParseTaskMessagePublisher parseTaskMessagePublisher;
 
+    @MockBean
+    private MediaAudioExtractService mediaAudioExtractService;
+
+    @TempDir
+    Path tempDir;
+
     private final Map<String, byte[]> objectStore = new ConcurrentHashMap<>();
 
     private Long userId;
@@ -93,7 +105,7 @@ class MediaTranscriptionIntegrationTests {
 
     @BeforeEach
     void setUp() {
-        reset(storageGateway, parseTaskMessagePublisher);
+        reset(storageGateway, parseTaskMessagePublisher, mediaAudioExtractService);
         objectStore.clear();
 
         mediaTranscriptMapper.delete(Wrappers.emptyWrapper());
@@ -116,6 +128,8 @@ class MediaTranscriptionIntegrationTests {
             String objectKey = invocation.getArgument(0, String.class);
             return new ByteArrayInputStream(objectStore.get(objectKey));
         });
+        when(storageGateway.getFileUrl(any())).thenAnswer(invocation ->
+                "http://storage.example.com/" + invocation.getArgument(0, String.class));
         doNothing().when(parseTaskMessagePublisher).publish(any(), any());
     }
 
@@ -160,16 +174,23 @@ class MediaTranscriptionIntegrationTests {
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.cleanedText").value(org.hamcrest.Matchers.containsString("audio preview for data structures")));
+        verify(mediaAudioExtractService, never()).extractToWav(any(), any());
     }
 
     @Test
-    void shouldTranscribeVideoAndCreateFollowUpTasks() {
+    void shouldExtractVideoAudioBeforeTranscribingAndCreateFollowUpTasks() throws Exception {
         Material material = createMaterial(
                 "course-video.mp4",
                 "mp4",
                 MaterialTypeEnum.VIDEO,
                 "video preview for operating systems".getBytes(StandardCharsets.UTF_8));
         ParseTask parseTask = createParseTask(material, ParseTaskTypeEnum.VIDEO_TRANSCRIBE);
+        Path extractedAudio = Files.writeString(tempDir.resolve("course-video.wav"),
+                "extracted audio preview for operating systems");
+        when(mediaAudioExtractService.extractToWav(any(), eq(material.getId()))).thenReturn(
+                AudioExtractionResult.builder()
+                        .audioFilePath(extractedAudio)
+                        .build());
 
         parseTaskService.processTask(parseTask.getId());
 
@@ -184,6 +205,19 @@ class MediaTranscriptionIntegrationTests {
                 parseTaskMapper.selectById(parseTask.getId()).getStatus());
         org.junit.jupiter.api.Assertions.assertEquals(MaterialParseStatusEnum.PARSING.name(),
                 materialMapper.selectById(material.getId()).getParseStatus());
+        MediaTranscript mediaTranscript = mediaTranscriptMapper.selectOne(Wrappers.<MediaTranscript>lambdaQuery()
+                .eq(MediaTranscript::getMaterialId, material.getId())
+                .last("limit 1"));
+        MaterialContent materialContent = materialContentMapper.selectOne(Wrappers.<MaterialContent>lambdaQuery()
+                .eq(MaterialContent::getMaterialId, material.getId())
+                .last("limit 1"));
+        org.junit.jupiter.api.Assertions.assertNotNull(mediaTranscript);
+        org.junit.jupiter.api.Assertions.assertTrue(mediaTranscript.getTranscriptText()
+                .contains("extracted audio preview for operating systems"));
+        org.junit.jupiter.api.Assertions.assertNotNull(materialContent);
+        org.junit.jupiter.api.Assertions.assertTrue(materialContent.getCleanedText()
+                .contains("extracted audio preview for operating systems"));
+        verify(mediaAudioExtractService, times(1)).extractToWav(any(), eq(material.getId()));
     }
 
     private Material createMaterial(String fileName, String fileType, MaterialTypeEnum materialType, byte[] content) {

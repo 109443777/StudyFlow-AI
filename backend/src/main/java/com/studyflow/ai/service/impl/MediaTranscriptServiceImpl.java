@@ -6,6 +6,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyflow.ai.common.exception.BusinessException;
 import com.studyflow.ai.common.util.TextCleanupSupport;
+import com.studyflow.ai.config.TranscriptionProperties;
 import com.studyflow.ai.dto.MediaTranscriptQueryDTO;
 import com.studyflow.ai.entity.Material;
 import com.studyflow.ai.entity.MediaTranscript;
@@ -19,17 +20,23 @@ import com.studyflow.ai.gateway.MediaTranscriptionRequest;
 import com.studyflow.ai.gateway.StorageGateway;
 import com.studyflow.ai.mapper.MaterialMapper;
 import com.studyflow.ai.mapper.MediaTranscriptMapper;
+import com.studyflow.ai.service.MediaAudioExtractService;
 import com.studyflow.ai.service.MaterialContentService;
 import com.studyflow.ai.service.MediaTranscriptService;
+import com.studyflow.ai.service.media.AudioExtractionResult;
 import com.studyflow.ai.service.media.MediaTranscriptionResult;
 import com.studyflow.ai.service.media.TranscriptSegment;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class MediaTranscriptServiceImpl implements MediaTranscriptService {
@@ -46,20 +53,42 @@ public class MediaTranscriptServiceImpl implements MediaTranscriptService {
 
     private final MaterialContentService materialContentService;
 
+    private final MediaAudioExtractService mediaAudioExtractService;
+
+    private final TranscriptionProperties transcriptionProperties;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public MediaTranscript transcribeAndSave(Material material, ParseTaskTypeEnum taskType) {
         MediaTypeEnum mediaType = resolveMediaType(material, taskType);
         MediaTranscript mediaTranscript = getOrCreateTranscript(material.getId(), mediaType);
         markTranscriptRunning(mediaTranscript);
-        try (InputStream inputStream = storageGateway.download(material.getObjectKey())) {
-            byte[] content = inputStream.readAllBytes();
+        Path originalMediaPath = null;
+        Path audioPath = null;
+        String extractedAudioObjectKey = null;
+        try {
+            originalMediaPath = downloadToTempFile(material);
+            audioPath = originalMediaPath;
+            String fileUrl = storageGateway.getFileUrl(material.getObjectKey());
+            if (mediaType == MediaTypeEnum.VIDEO) {
+                AudioExtractionResult extractionResult = mediaAudioExtractService.extractToWav(originalMediaPath,
+                        material.getId());
+                audioPath = extractionResult.getAudioFilePath();
+                extractedAudioObjectKey = "transcripts/" + material.getId() + "/extracted-audio.wav";
+                try (InputStream inputStream = Files.newInputStream(audioPath)) {
+                    storageGateway.upload(extractedAudioObjectKey, inputStream, Files.size(audioPath), "audio/wav");
+                }
+                fileUrl = storageGateway.getFileUrl(extractedAudioObjectKey);
+            }
+            byte[] content = Files.readAllBytes(audioPath);
             MediaTranscriptionResult result = mediaTranscriptionGateway.transcribe(MediaTranscriptionRequest.builder()
                     .materialId(material.getId())
-                    .fileName(material.getFileName())
-                    .fileType(material.getFileType())
+                    .fileName(audioPath.getFileName().toString())
+                    .fileType(resolveFileType(audioPath, material.getFileType()))
                     .mediaType(mediaType)
                     .content(content)
+                    .localFilePath(audioPath.toString())
+                    .fileUrl(fileUrl)
                     .build());
             String cleanedText = TextCleanupSupport.cleanText(result.getTranscriptText());
             List<String> chapterInfo = TextCleanupSupport.extractChapterInfo(result.getTranscriptText());
@@ -82,6 +111,14 @@ public class MediaTranscriptServiceImpl implements MediaTranscriptService {
         } catch (RuntimeException exception) {
             markTranscriptFailed(mediaTranscript);
             throw exception;
+        } finally {
+            deleteTempFile(originalMediaPath);
+            if (audioPath != null && !audioPath.equals(originalMediaPath)) {
+                deleteTempFile(audioPath);
+            }
+            if (extractedAudioObjectKey != null) {
+                deleteStorageObjectQuietly(extractedAudioObjectKey);
+            }
         }
     }
 
@@ -125,6 +162,48 @@ public class MediaTranscriptServiceImpl implements MediaTranscriptService {
         }
         MaterialTypeEnum materialType = MaterialTypeEnum.valueOf(material.getMaterialType());
         return materialType == MaterialTypeEnum.AUDIO ? MediaTypeEnum.AUDIO : MediaTypeEnum.VIDEO;
+    }
+
+    private Path downloadToTempFile(Material material) {
+        try {
+            Path tempDir = Path.of(transcriptionProperties.getTempDir());
+            Files.createDirectories(tempDir);
+            Path mediaPath = tempDir.resolve("material-" + material.getId() + "-source." + material.getFileType());
+            try (InputStream inputStream = storageGateway.download(material.getObjectKey())) {
+                Files.copy(inputStream, mediaPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+            return mediaPath;
+        } catch (IOException exception) {
+            throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "failed to download media from storage");
+        }
+    }
+
+    private String resolveFileType(Path filePath, String fallbackType) {
+        String fileName = filePath.getFileName().toString();
+        int dotIndex = fileName.lastIndexOf('.');
+        if (dotIndex >= 0 && dotIndex < fileName.length() - 1) {
+            return fileName.substring(dotIndex + 1).toLowerCase();
+        }
+        return fallbackType;
+    }
+
+    private void deleteTempFile(Path filePath) {
+        if (filePath == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(filePath);
+        } catch (IOException exception) {
+            log.warn("Failed to delete media temp file, path={}", filePath);
+        }
+    }
+
+    private void deleteStorageObjectQuietly(String objectKey) {
+        try {
+            storageGateway.delete(objectKey);
+        } catch (RuntimeException exception) {
+            log.warn("Failed to delete extracted audio object, objectKey={}", objectKey);
+        }
     }
 
     private MediaTranscript getOrCreateTranscript(Long materialId, MediaTypeEnum mediaType) {
