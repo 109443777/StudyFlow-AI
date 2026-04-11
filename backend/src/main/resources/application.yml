@@ -111,6 +111,7 @@ studyflow:
     mock-prefix: ${TRANSCRIPTION_MOCK_PREFIX:[Mock Transcript]}
     ffmpeg-path: ${TRANSCRIPTION_FFMPEG_PATH:ffmpeg}
     temp-dir: ${TRANSCRIPTION_TEMP_DIR:${java.io.tmpdir}/studyflow-media}
+    ffmpeg-timeout-seconds: ${TRANSCRIPTION_FFMPEG_TIMEOUT_SECONDS:600}
     external:
       base-url: ${TRANSCRIPTION_BASE_URL:}
       api-key: ${TRANSCRIPTION_API_KEY:}

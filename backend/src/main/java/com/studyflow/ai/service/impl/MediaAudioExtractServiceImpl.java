@@ -19,8 +19,6 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class MediaAudioExtractServiceImpl implements MediaAudioExtractService {
 
-    private static final long FFMPEG_TIMEOUT_SECONDS = 30;
-
     private final TranscriptionProperties transcriptionProperties;
 
     @Override
@@ -38,13 +36,15 @@ public class MediaAudioExtractServiceImpl implements MediaAudioExtractService {
                 "-acodec",
                 "pcm_s16le",
                 audioPath.toString());
+        Process process = null;
         try {
-            Process process = new ProcessBuilder(command)
-                    .redirectErrorStream(true)
+            process = new ProcessBuilder(command)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
                     .start();
-            boolean finished = process.waitFor(FFMPEG_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            boolean finished = process.waitFor(transcriptionProperties.getFfmpegTimeoutSeconds(), TimeUnit.SECONDS);
             if (!finished) {
-                process.destroyForcibly();
+                destroyProcess(process);
                 throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "ffmpeg audio extraction timed out");
             }
             if (process.exitValue() != 0 || !Files.exists(audioPath)) {
@@ -54,11 +54,29 @@ public class MediaAudioExtractServiceImpl implements MediaAudioExtractService {
                     .audioFilePath(audioPath)
                     .build();
         } catch (IOException exception) {
-            log.warn("FFmpeg audio extraction failed to start, materialId={}, videoPath={}", materialId, videoPath);
+            log.warn("FFmpeg audio extraction failed to start, materialId={}, videoPath={}", materialId, videoPath,
+                    exception);
             throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "ffmpeg audio extraction failed");
         } catch (InterruptedException exception) {
+            if (process != null) {
+                destroyProcessQuietly(process);
+            }
             Thread.currentThread().interrupt();
             throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "ffmpeg audio extraction interrupted");
+        }
+    }
+
+    private void destroyProcess(Process process) throws InterruptedException {
+        process.destroyForcibly();
+        process.waitFor(5, TimeUnit.SECONDS);
+    }
+
+    private void destroyProcessQuietly(Process process) {
+        process.destroyForcibly();
+        try {
+            process.waitFor(5, TimeUnit.SECONDS);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
         }
     }
 

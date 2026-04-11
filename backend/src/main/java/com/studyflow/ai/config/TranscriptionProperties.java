@@ -15,6 +15,8 @@ public class TranscriptionProperties {
 
     private String tempDir = System.getProperty("java.io.tmpdir") + "/studyflow-media";
 
+    private long ffmpegTimeoutSeconds = 600;
+
     private External external = new External();
 
     @Data
