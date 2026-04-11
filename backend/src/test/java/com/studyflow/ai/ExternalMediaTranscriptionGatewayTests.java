@@ -2,10 +2,19 @@ package com.studyflow.ai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.studyflow.ai.common.exception.BusinessException;
 import com.studyflow.ai.config.TranscriptionProperties;
 import com.studyflow.ai.enums.MediaTypeEnum;
+import com.studyflow.ai.gateway.ExternalMediaTranscriptionGateway;
 import com.studyflow.ai.gateway.MediaTranscriptionRequest;
+import com.studyflow.ai.service.media.MediaTranscriptionResult;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 
 class ExternalMediaTranscriptionGatewayTests {
@@ -34,10 +43,131 @@ class ExternalMediaTranscriptionGatewayTests {
                 .fileType("wav")
                 .mediaType(MediaTypeEnum.AUDIO)
                 .localFilePath("C:/temp/lecture.wav")
+                .fileUrl("http://example.com/audio.wav")
                 .build();
 
         assertEquals("C:/temp/lecture.wav", request.getLocalFilePath());
+        assertEquals("http://example.com/audio.wav", request.getFileUrl());
         assertEquals(MediaTypeEnum.AUDIO, request.getMediaType());
         assertNotNull(request);
+    }
+
+    @Test
+    void shouldSubmitAliyunTaskPollAndParseTranscriptionResult() throws Exception {
+        try (FakeAliyunTranscriptionServer server = FakeAliyunTranscriptionServer.start()) {
+            TranscriptionProperties properties = new TranscriptionProperties();
+            properties.getExternal().setBaseUrl(server.baseUrl());
+            properties.getExternal().setApiKey("dashscope-key");
+            properties.getExternal().setModel("paraformer-v2");
+            properties.getExternal().setPollIntervalMillis(1);
+            properties.getExternal().setMaxPollAttempts(2);
+
+            MediaTranscriptionResult result = new ExternalMediaTranscriptionGateway(properties)
+                    .transcribe(MediaTranscriptionRequest.builder()
+                            .materialId(1L)
+                            .fileName("lecture.wav")
+                            .fileType("wav")
+                            .mediaType(MediaTypeEnum.AUDIO)
+                            .fileUrl("http://storage.example.com/lecture.wav")
+                            .build());
+
+            assertEquals("第一句\n第二句", result.getTranscriptText());
+            assertEquals(2200L, result.getDuration());
+            assertEquals(2, result.getTranscriptSegments().size());
+            assertEquals("第一句", result.getTranscriptSegments().get(0).getText());
+            assertEquals(0L, result.getTranscriptSegments().get(0).getStartMillis());
+            assertEquals(1000L, result.getTranscriptSegments().get(0).getEndMillis());
+            assertEquals("Bearer dashscope-key", server.getAuthorizationHeader());
+            assertEquals("enable", server.getAsyncHeader());
+            assertEquals(true, server.getSubmitBody().contains("\"file_urls\":[\"http://storage.example.com/lecture.wav\"]"));
+        }
+    }
+
+    @Test
+    void shouldRejectMissingFileUrlForExternalTranscription() {
+        TranscriptionProperties properties = new TranscriptionProperties();
+        properties.getExternal().setBaseUrl("https://dashscope.aliyuncs.com/api/v1");
+        properties.getExternal().setApiKey("dashscope-key");
+        properties.getExternal().setModel("paraformer-v2");
+
+        assertThrows(BusinessException.class, () -> new ExternalMediaTranscriptionGateway(properties)
+                .transcribe(MediaTranscriptionRequest.builder()
+                        .mediaType(MediaTypeEnum.AUDIO)
+                        .build()));
+    }
+
+    private static final class FakeAliyunTranscriptionServer implements AutoCloseable {
+
+        private final HttpServer httpServer;
+
+        private volatile String authorizationHeader;
+
+        private volatile String asyncHeader;
+
+        private volatile String submitBody;
+
+        private FakeAliyunTranscriptionServer(HttpServer httpServer) {
+            this.httpServer = httpServer;
+        }
+
+        static FakeAliyunTranscriptionServer start() throws IOException {
+            HttpServer httpServer = HttpServer.create(new InetSocketAddress(0), 0);
+            FakeAliyunTranscriptionServer server = new FakeAliyunTranscriptionServer(httpServer);
+            httpServer.createContext("/api/v1/services/audio/asr/transcription", server::handleSubmit);
+            httpServer.createContext("/api/v1/tasks/task-001", server::handleTask);
+            httpServer.createContext("/transcriptions/result.json", server::handleResult);
+            httpServer.start();
+            return server;
+        }
+
+        String baseUrl() {
+            return "http://localhost:" + httpServer.getAddress().getPort() + "/api/v1";
+        }
+
+        String getAuthorizationHeader() {
+            return authorizationHeader;
+        }
+
+        String getAsyncHeader() {
+            return asyncHeader;
+        }
+
+        String getSubmitBody() {
+            return submitBody;
+        }
+
+        @Override
+        public void close() {
+            httpServer.stop(0);
+        }
+
+        private void handleSubmit(HttpExchange exchange) throws IOException {
+            authorizationHeader = exchange.getRequestHeaders().getFirst("Authorization");
+            asyncHeader = exchange.getRequestHeaders().getFirst("X-DashScope-Async");
+            submitBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            writeJson(exchange, """
+                    {"output":{"task_id":"task-001","task_status":"PENDING"}}
+                    """);
+        }
+
+        private void handleTask(HttpExchange exchange) throws IOException {
+            writeJson(exchange, """
+                    {"output":{"task_id":"task-001","task_status":"SUCCEEDED","results":[{"file_url":"http://storage.example.com/lecture.wav","transcription_url":"%s/transcriptions/result.json","subtask_status":"SUCCEEDED"}]}}
+                    """.formatted("http://localhost:" + httpServer.getAddress().getPort()));
+        }
+
+        private void handleResult(HttpExchange exchange) throws IOException {
+            writeJson(exchange, """
+                    {"transcripts":[{"text":"第一句"},{"text":"第二句"}],"sentences":[{"begin_time":0,"end_time":1000,"text":"第一句"},{"begin_time":1200,"end_time":2200,"text":"第二句"}],"properties":{"original_duration_in_milliseconds":2200}}
+                    """);
+        }
+
+        private void writeJson(HttpExchange exchange, String body) throws IOException {
+            byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        }
     }
 }

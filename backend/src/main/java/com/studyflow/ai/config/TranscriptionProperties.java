@@ -27,5 +27,9 @@ public class TranscriptionProperties {
         private String apiKey;
 
         private String model;
+
+        private long pollIntervalMillis = 1000;
+
+        private int maxPollAttempts = 60;
     }
 }

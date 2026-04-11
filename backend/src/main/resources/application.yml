@@ -116,6 +116,8 @@ studyflow:
       base-url: ${TRANSCRIPTION_BASE_URL:}
       api-key: ${TRANSCRIPTION_API_KEY:}
       model: ${TRANSCRIPTION_MODEL:paraformer-v2}
+      poll-interval-millis: ${TRANSCRIPTION_POLL_INTERVAL_MILLIS:1000}
+      max-poll-attempts: ${TRANSCRIPTION_MAX_POLL_ATTEMPTS:60}
 
 logging:
   config: classpath:logback-spring.xml

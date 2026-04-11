@@ -19,4 +19,6 @@ public class MediaTranscriptionRequest {
     private byte[] content;
 
     private String localFilePath;
+
+    private String fileUrl;
 }
