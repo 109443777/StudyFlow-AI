@@ -17,4 +17,6 @@ public class MediaTranscriptionRequest {
     private MediaTypeEnum mediaType;
 
     private byte[] content;
+
+    private String localFilePath;
 }

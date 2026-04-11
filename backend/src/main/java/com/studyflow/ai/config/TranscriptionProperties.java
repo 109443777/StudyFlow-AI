@@ -11,6 +11,10 @@ public class TranscriptionProperties {
 
     private String mockPrefix = "[Mock Transcript]";
 
+    private String ffmpegPath = "ffmpeg";
+
+    private String tempDir = System.getProperty("java.io.tmpdir") + "/studyflow-media";
+
     private External external = new External();
 
     @Data

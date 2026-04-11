@@ -109,10 +109,12 @@ studyflow:
   transcription:
     provider: ${TRANSCRIPTION_PROVIDER:mock}
     mock-prefix: ${TRANSCRIPTION_MOCK_PREFIX:[Mock Transcript]}
+    ffmpeg-path: ${TRANSCRIPTION_FFMPEG_PATH:ffmpeg}
+    temp-dir: ${TRANSCRIPTION_TEMP_DIR:${java.io.tmpdir}/studyflow-media}
     external:
       base-url: ${TRANSCRIPTION_BASE_URL:}
       api-key: ${TRANSCRIPTION_API_KEY:}
-      model: ${TRANSCRIPTION_MODEL:}
+      model: ${TRANSCRIPTION_MODEL:paraformer-v2}
 
 logging:
   config: classpath:logback-spring.xml
