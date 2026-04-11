@@ -74,6 +74,38 @@ Notes:
 - use it for AI keys and local overrides
 - if you use the default Docker MySQL port, keep the datasource port as `3307`
 
+## Media Transcription Setup
+
+The default local transcription provider is `mock`, so audio and video tasks can run without an external ASR account.
+
+To test the external Aliyun Bailian/DashScope transcription path:
+
+1. Install FFmpeg and make sure `ffmpeg` is available in `PATH`.
+2. Configure `config/application-local.yml`.
+3. Make sure the audio file URL passed to Aliyun is reachable by Aliyun. If MinIO runs only on `localhost`, the cloud ASR service usually cannot download it. Use a public MinIO endpoint, OSS URL, or another reachable object URL for real external transcription tests.
+
+Example:
+
+```yaml
+studyflow:
+  transcription:
+    provider: external
+    ffmpeg-path: ffmpeg
+    temp-dir: ${java.io.tmpdir}/studyflow-media
+    ffmpeg-timeout-seconds: 600
+    external:
+      base-url: https://dashscope.aliyuncs.com/api/v1
+      api-key: your-dashscope-api-key
+      model: paraformer-v2
+      poll-interval-millis: 1000
+      max-poll-attempts: 60
+```
+
+Current media flow:
+
+- audio: `MinIO URL -> Aliyun transcription -> media_transcript -> material_content`
+- video: `MinIO download -> FFmpeg extract wav -> temporary object URL -> Aliyun transcription -> media_transcript -> material_content`
+
 ## Run The App
 
 Default startup:

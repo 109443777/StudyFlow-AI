@@ -16,3 +16,12 @@ studyflow:
   transcription:
     provider: mock
     mock-prefix: "[Mock Transcript]"
+    ffmpeg-path: ffmpeg
+    temp-dir: ${java.io.tmpdir}/studyflow-media
+    ffmpeg-timeout-seconds: 600
+    external:
+      base-url: https://dashscope.aliyuncs.com/api/v1
+      api-key: your-dashscope-api-key
+      model: paraformer-v2
+      poll-interval-millis: 1000
+      max-poll-attempts: 60
