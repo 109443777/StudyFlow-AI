@@ -107,13 +107,15 @@ studyflow:
     top-k: ${STUDYFLOW_RAG_TOP_K:4}
     history-size: ${STUDYFLOW_RAG_HISTORY_SIZE:6}
   vector-store:
-    provider: ${STUDYFLOW_VECTOR_STORE_PROVIDER:database}
+    provider: ${STUDYFLOW_VECTOR_STORE_PROVIDER:milvus}
+    fallback-to-database: ${STUDYFLOW_VECTOR_STORE_FALLBACK_TO_DATABASE:true}
     milvus:
       uri: ${MILVUS_URI:http://localhost:19530}
       token: ${MILVUS_TOKEN:}
       collection-name: ${MILVUS_COLLECTION_NAME:studyflow_material_chunks}
       dimension: ${MILVUS_DIMENSION:1024}
       metric-type: ${MILVUS_METRIC_TYPE:COSINE}
+      batch-size: ${MILVUS_BATCH_SIZE:64}
   transcription:
     provider: ${TRANSCRIPTION_PROVIDER:mock}
     mock-prefix: ${TRANSCRIPTION_MOCK_PREFIX:[Mock Transcript]}

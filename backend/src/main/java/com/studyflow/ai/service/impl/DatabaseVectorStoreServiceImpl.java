@@ -15,11 +15,11 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Service;
 
 @Service
-@ConditionalOnProperty(name = "studyflow.vector-store.provider", havingValue = "database", matchIfMissing = true)
+@ConditionalOnExpression("'${studyflow.vector-store.provider:database}' == 'database' || '${studyflow.vector-store.fallback-to-database:true}' == 'true'")
 @RequiredArgsConstructor
 public class DatabaseVectorStoreServiceImpl implements VectorStoreService {
 

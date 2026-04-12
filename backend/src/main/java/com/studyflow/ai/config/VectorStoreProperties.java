@@ -9,6 +9,8 @@ public class VectorStoreProperties {
 
     private String provider = "database";
 
+    private Boolean fallbackToDatabase = true;
+
     private Milvus milvus = new Milvus();
 
     @Data
@@ -23,5 +25,7 @@ public class VectorStoreProperties {
         private Integer dimension = 1024;
 
         private String metricType = "COSINE";
+
+        private Integer batchSize = 64;
     }
 }

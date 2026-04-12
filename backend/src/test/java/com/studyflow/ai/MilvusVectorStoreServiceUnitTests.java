@@ -29,4 +29,12 @@ class MilvusVectorStoreServiceUnitTests {
         assertThat(MilvusVectorStoreServiceImpl.buildMaterialFilter(123L))
                 .isEqualTo("material_id == 123");
     }
+
+    @Test
+    void shouldCalculateBatchCount() {
+        assertThat(MilvusVectorStoreServiceImpl.batchCount(0, 64)).isZero();
+        assertThat(MilvusVectorStoreServiceImpl.batchCount(64, 64)).isEqualTo(1);
+        assertThat(MilvusVectorStoreServiceImpl.batchCount(65, 64)).isEqualTo(2);
+        assertThat(MilvusVectorStoreServiceImpl.batchCount(129, 64)).isEqualTo(3);
+    }
 }

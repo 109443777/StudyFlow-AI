@@ -24,7 +24,9 @@ class VectorStoreProviderConfigTests {
     void shouldUseDatabaseVectorStoreByDefault() {
         assertThat(vectorStoreService).isInstanceOf(DatabaseVectorStoreServiceImpl.class);
         assertThat(vectorStoreProperties.getProvider()).isEqualTo("database");
+        assertThat(vectorStoreProperties.getFallbackToDatabase()).isTrue();
         assertThat(vectorStoreProperties.getMilvus().getCollectionName())
                 .isEqualTo("studyflow_material_chunks");
+        assertThat(vectorStoreProperties.getMilvus().getBatchSize()).isEqualTo(64);
     }
 }

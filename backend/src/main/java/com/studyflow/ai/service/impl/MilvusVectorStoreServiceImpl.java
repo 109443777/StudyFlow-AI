@@ -24,17 +24,19 @@ import io.milvus.v2.service.vector.request.UpsertReq;
 import io.milvus.v2.service.vector.request.data.FloatVec;
 import io.milvus.v2.service.vector.response.SearchResp;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 @Slf4j
 @Service
+@Primary
 @ConditionalOnProperty(name = "studyflow.vector-store.provider", havingValue = "milvus")
 public class MilvusVectorStoreServiceImpl implements VectorStoreService {
 
@@ -56,24 +58,31 @@ public class MilvusVectorStoreServiceImpl implements VectorStoreService {
 
     private final MaterialChunkMapper materialChunkMapper;
 
+    private final ObjectProvider<DatabaseVectorStoreServiceImpl> databaseVectorStoreServiceProvider;
+
     private volatile MilvusClientV2 milvusClient;
+
+    private volatile boolean collectionReady;
 
     @Autowired
     public MilvusVectorStoreServiceImpl(
             VectorStoreProperties vectorStoreProperties,
             EmbeddingGateway embeddingGateway,
-            MaterialChunkMapper materialChunkMapper) {
-        this(vectorStoreProperties, embeddingGateway, materialChunkMapper, null);
+            MaterialChunkMapper materialChunkMapper,
+            ObjectProvider<DatabaseVectorStoreServiceImpl> databaseVectorStoreServiceProvider) {
+        this(vectorStoreProperties, embeddingGateway, materialChunkMapper, databaseVectorStoreServiceProvider, null);
     }
 
     MilvusVectorStoreServiceImpl(
             VectorStoreProperties vectorStoreProperties,
             EmbeddingGateway embeddingGateway,
             MaterialChunkMapper materialChunkMapper,
+            ObjectProvider<DatabaseVectorStoreServiceImpl> databaseVectorStoreServiceProvider,
             MilvusClientV2 milvusClient) {
         this.vectorStoreProperties = vectorStoreProperties;
         this.embeddingGateway = embeddingGateway;
         this.materialChunkMapper = materialChunkMapper;
+        this.databaseVectorStoreServiceProvider = databaseVectorStoreServiceProvider;
         this.milvusClient = milvusClient;
     }
 
@@ -82,8 +91,8 @@ public class MilvusVectorStoreServiceImpl implements VectorStoreService {
         if (chunks == null || chunks.isEmpty()) {
             throw new BusinessException(ResultCodeEnum.MATERIAL_CONTENT_NOT_FOUND);
         }
-        ensureCollection();
         List<List<Double>> vectors = embeddingGateway.embedDocuments(chunks.stream().map(MaterialChunk::getChunkText).toList());
+        validateEmbeddingCount(vectors, chunks.size());
         List<JsonObject> rows = new ArrayList<>();
         int dimension = vectorStoreProperties.getMilvus().getDimension();
         for (int i = 0; i < chunks.size(); i++) {
@@ -95,11 +104,15 @@ public class MilvusVectorStoreServiceImpl implements VectorStoreService {
             rows.add(toMilvusRow(materialId, chunk, toFloatVector(vector, dimension)));
         }
         try {
-            milvusClient().upsert(UpsertReq.builder()
-                    .collectionName(collectionName())
-                    .data(rows)
-                    .build());
+            ensureCollection();
+            upsertRowsInBatches(rows);
         } catch (RuntimeException exception) {
+            collectionReady = false;
+            if (Boolean.TRUE.equals(vectorStoreProperties.getFallbackToDatabase())) {
+                log.warn("Failed to upsert material chunks into Milvus, keep MySQL vector fallback, materialId={}",
+                        materialId, exception);
+                return;
+            }
             log.warn("Failed to upsert material chunks into Milvus, materialId={}", materialId, exception);
             throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "failed to upsert chunks into milvus");
         }
@@ -107,11 +120,11 @@ public class MilvusVectorStoreServiceImpl implements VectorStoreService {
 
     @Override
     public List<ChunkSearchResult> searchByMaterialId(Long materialId, String question, Integer topK) {
-        ensureCollection();
-        List<Float> queryVector = toFloatVector(
-                embeddingGateway.embedQuery(question),
-                vectorStoreProperties.getMilvus().getDimension());
         try {
+            ensureCollection();
+            List<Float> queryVector = toFloatVector(
+                    embeddingGateway.embedQuery(question),
+                    vectorStoreProperties.getMilvus().getDimension());
             SearchResp searchResp = milvusClient().search(SearchReq.builder()
                     .collectionName(collectionName())
                     .data(List.of(new FloatVec(queryVector)))
@@ -127,10 +140,11 @@ public class MilvusVectorStoreServiceImpl implements VectorStoreService {
             }
             return results;
         } catch (BusinessException exception) {
-            throw exception;
+            return fallbackSearch(materialId, question, topK, exception);
         } catch (RuntimeException exception) {
+            collectionReady = false;
             log.warn("Failed to search material chunks from Milvus, materialId={}", materialId, exception);
-            throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "failed to search chunks from milvus");
+            return fallbackSearch(materialId, question, topK, exception);
         }
     }
 
@@ -149,6 +163,14 @@ public class MilvusVectorStoreServiceImpl implements VectorStoreService {
 
     public static String buildMaterialFilter(Long materialId) {
         return FIELD_MATERIAL_ID + " == " + materialId;
+    }
+
+    public static int batchCount(int itemCount, int batchSize) {
+        if (itemCount <= 0) {
+            return 0;
+        }
+        int safeBatchSize = Math.max(1, batchSize);
+        return (itemCount + safeBatchSize - 1) / safeBatchSize;
     }
 
     private List<ChunkSearchResult> toSearchResults(SearchResp searchResp) {
@@ -174,48 +196,104 @@ public class MilvusVectorStoreServiceImpl implements VectorStoreService {
     }
 
     private void ensureCollection() {
-        try {
-            if (milvusClient().hasCollection(HasCollectionReq.builder()
-                    .collectionName(collectionName())
-                    .build())) {
-                loadCollection();
+        if (collectionReady) {
+            return;
+        }
+        synchronized (this) {
+            if (collectionReady) {
                 return;
             }
-            CreateCollectionReq.CollectionSchema schema = milvusClient().createSchema();
-            schema.addField(AddFieldReq.builder()
-                    .fieldName(FIELD_CHUNK_ID)
-                    .dataType(io.milvus.v2.common.DataType.Int64)
-                    .isPrimaryKey(Boolean.TRUE)
-                    .autoID(Boolean.FALSE)
-                    .build());
-            schema.addField(AddFieldReq.builder()
-                    .fieldName(FIELD_MATERIAL_ID)
-                    .dataType(io.milvus.v2.common.DataType.Int64)
-                    .build());
-            schema.addField(AddFieldReq.builder()
-                    .fieldName(FIELD_CHUNK_INDEX)
-                    .dataType(io.milvus.v2.common.DataType.Int64)
-                    .build());
-            schema.addField(AddFieldReq.builder()
-                    .fieldName(FIELD_CHUNK_TEXT)
-                    .dataType(io.milvus.v2.common.DataType.VarChar)
-                    .maxLength(8192)
-                    .build());
-            schema.addField(AddFieldReq.builder()
-                    .fieldName(FIELD_EMBEDDING)
-                    .dataType(io.milvus.v2.common.DataType.FloatVector)
-                    .dimension(vectorStoreProperties.getMilvus().getDimension())
-                    .build());
-            milvusClient().createCollection(CreateCollectionReq.builder()
-                    .collectionName(collectionName())
-                    .collectionSchema(schema)
-                    .indexParams(List.of(vectorIndexParam()))
-                    .build());
-            loadCollection();
-        } catch (RuntimeException exception) {
-            log.warn("Failed to ensure Milvus collection, collectionName={}", collectionName(), exception);
-            throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "failed to ensure milvus collection");
+            try {
+                if (milvusClient().hasCollection(HasCollectionReq.builder()
+                        .collectionName(collectionName())
+                        .build())) {
+                    loadCollection();
+                    collectionReady = true;
+                    return;
+                }
+                CreateCollectionReq.CollectionSchema schema = milvusClient().createSchema();
+                schema.addField(AddFieldReq.builder()
+                        .fieldName(FIELD_CHUNK_ID)
+                        .dataType(io.milvus.v2.common.DataType.Int64)
+                        .isPrimaryKey(Boolean.TRUE)
+                        .autoID(Boolean.FALSE)
+                        .build());
+                schema.addField(AddFieldReq.builder()
+                        .fieldName(FIELD_MATERIAL_ID)
+                        .dataType(io.milvus.v2.common.DataType.Int64)
+                        .build());
+                schema.addField(AddFieldReq.builder()
+                        .fieldName(FIELD_CHUNK_INDEX)
+                        .dataType(io.milvus.v2.common.DataType.Int64)
+                        .build());
+                schema.addField(AddFieldReq.builder()
+                        .fieldName(FIELD_CHUNK_TEXT)
+                        .dataType(io.milvus.v2.common.DataType.VarChar)
+                        .maxLength(8192)
+                        .build());
+                schema.addField(AddFieldReq.builder()
+                        .fieldName(FIELD_EMBEDDING)
+                        .dataType(io.milvus.v2.common.DataType.FloatVector)
+                        .dimension(vectorStoreProperties.getMilvus().getDimension())
+                        .build());
+                milvusClient().createCollection(CreateCollectionReq.builder()
+                        .collectionName(collectionName())
+                        .collectionSchema(schema)
+                        .indexParams(List.of(vectorIndexParam()))
+                        .build());
+                loadCollection();
+                collectionReady = true;
+            } catch (RuntimeException exception) {
+                collectionReady = false;
+                log.warn("Failed to ensure Milvus collection, collectionName={}", collectionName(), exception);
+                throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "failed to ensure milvus collection");
+            }
         }
+    }
+
+    private void upsertRowsInBatches(List<JsonObject> rows) {
+        int batchSize = batchSize();
+        int totalBatches = batchCount(rows.size(), batchSize);
+        for (int batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+            int fromIndex = batchIndex * batchSize;
+            int toIndex = Math.min(rows.size(), fromIndex + batchSize);
+            milvusClient().upsert(UpsertReq.builder()
+                    .collectionName(collectionName())
+                    .data(rows.subList(fromIndex, toIndex))
+                    .build());
+        }
+    }
+
+    private void validateEmbeddingCount(List<List<Double>> vectors, int expectedCount) {
+        if (vectors == null || vectors.size() != expectedCount) {
+            throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY,
+                    "embedding count mismatch, expected=" + expectedCount
+                            + ", actual=" + (vectors == null ? 0 : vectors.size()));
+        }
+    }
+
+    private List<ChunkSearchResult> fallbackSearch(
+            Long materialId,
+            String question,
+            Integer topK,
+            Exception exception) {
+        if (!Boolean.TRUE.equals(vectorStoreProperties.getFallbackToDatabase())
+                || databaseVectorStoreServiceProvider == null) {
+            throwOriginalMilvusException(exception);
+        }
+        DatabaseVectorStoreServiceImpl databaseVectorStoreService = databaseVectorStoreServiceProvider.getIfAvailable();
+        if (databaseVectorStoreService == null) {
+            throwOriginalMilvusException(exception);
+        }
+        log.warn("Fallback to database vector store for RAG search, materialId={}", materialId, exception);
+        return databaseVectorStoreService.searchByMaterialId(materialId, question, topK);
+    }
+
+    private void throwOriginalMilvusException(Exception exception) {
+        if (exception instanceof BusinessException businessException) {
+            throw businessException;
+        }
+        throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "failed to search chunks from milvus");
     }
 
     private void loadCollection() {
@@ -227,6 +305,11 @@ public class MilvusVectorStoreServiceImpl implements VectorStoreService {
 
     private String collectionName() {
         return vectorStoreProperties.getMilvus().getCollectionName();
+    }
+
+    private int batchSize() {
+        Integer batchSize = vectorStoreProperties.getMilvus().getBatchSize();
+        return Math.max(1, batchSize == null ? 64 : batchSize);
     }
 
     private IndexParam vectorIndexParam() {

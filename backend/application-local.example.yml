@@ -14,13 +14,15 @@ studyflow:
     log-responses: false
 
   vector-store:
-    provider: database
+    provider: milvus
+    fallback-to-database: true
     milvus:
       uri: http://localhost:19530
       token:
       collection-name: studyflow_material_chunks
       dimension: 1024
       metric-type: COSINE
+      batch-size: 64
 
   transcription:
     provider: mock
