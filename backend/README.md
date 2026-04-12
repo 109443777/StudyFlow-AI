@@ -28,6 +28,8 @@ Default exposed ports:
 - RabbitMQ Management: `15672`
 - MinIO API: `9000`
 - MinIO Console: `9001`
+- Milvus: `19530`
+- Milvus Health/Metrics: `9091`
 
 Why MySQL uses `3307`:
 - Many Windows environments already have a local MySQL service on `3306`
@@ -73,6 +75,29 @@ Notes:
 - `config/application-local.yml` is ignored by Git
 - use it for AI keys and local overrides
 - if you use the default Docker MySQL port, keep the datasource port as `3307`
+
+## Vector Store Setup
+
+RAG retrieval defaults to `database`, which stores embedding JSON in MySQL and is convenient for local smoke tests.
+
+To use the real Milvus provider, start Docker Compose and update `config/application-local.yml`:
+
+```yaml
+studyflow:
+  vector-store:
+    provider: milvus
+    milvus:
+      uri: http://localhost:19530
+      token:
+      collection-name: studyflow_material_chunks
+      dimension: 1024
+      metric-type: COSINE
+```
+
+Notes:
+- Milvus uses its own internal MinIO service in Docker Compose. This is separate from the StudyFlow file-storage MinIO used for uploaded documents, audio, and video.
+- `dimension` must match the embedding model output dimension. If you change the embedding model, update `studyflow.vector-store.milvus.dimension` at the same time.
+- The current Milvus collection stores `chunk_id`, `material_id`, `chunk_index`, `chunk_text`, and `embedding`, while MySQL keeps the original chunk metadata for fallback and debugging.
 
 ## Media Transcription Setup
 

@@ -13,6 +13,15 @@ studyflow:
     log-requests: false
     log-responses: false
 
+  vector-store:
+    provider: database
+    milvus:
+      uri: http://localhost:19530
+      token:
+      collection-name: studyflow_material_chunks
+      dimension: 1024
+      metric-type: COSINE
+
   transcription:
     provider: mock
     mock-prefix: "[Mock Transcript]"

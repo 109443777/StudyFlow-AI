@@ -47,6 +47,14 @@ studyflow:
     chunk-overlap: 40
     top-k: 3
     history-size: 4
+  vector-store:
+    provider: database
+    milvus:
+      uri: http://localhost:19530
+      token:
+      collection-name: studyflow_material_chunks
+      dimension: 32
+      metric-type: COSINE
   transcription:
     provider: mock
     mock-prefix: "[Mock Transcript]"
