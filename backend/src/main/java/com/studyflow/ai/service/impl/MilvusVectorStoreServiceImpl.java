@@ -120,6 +120,11 @@ public class MilvusVectorStoreServiceImpl implements VectorStoreService {
 
     @Override
     public List<ChunkSearchResult> searchByMaterialId(Long materialId, String question, Integer topK) {
+        return searchByMaterialIds(List.of(materialId), question, topK);
+    }
+
+    @Override
+    public List<ChunkSearchResult> searchByMaterialIds(List<Long> materialIds, String question, Integer topK) {
         try {
             ensureCollection();
             List<Float> queryVector = toFloatVector(
@@ -130,7 +135,7 @@ public class MilvusVectorStoreServiceImpl implements VectorStoreService {
                     .data(List.of(new FloatVec(queryVector)))
                     .annsField(FIELD_EMBEDDING)
                     .metricType(metricType())
-                    .filter(buildMaterialFilter(materialId))
+                    .filter(buildMaterialFilter(materialIds))
                     .limit(topK == null ? 4 : topK)
                     .outputFields(List.of(FIELD_CHUNK_ID, FIELD_MATERIAL_ID, FIELD_CHUNK_INDEX, FIELD_CHUNK_TEXT))
                     .build());
@@ -140,11 +145,11 @@ public class MilvusVectorStoreServiceImpl implements VectorStoreService {
             }
             return results;
         } catch (BusinessException exception) {
-            return fallbackSearch(materialId, question, topK, exception);
+            return fallbackSearch(materialIds, question, topK, exception);
         } catch (RuntimeException exception) {
             collectionReady = false;
-            log.warn("Failed to search material chunks from Milvus, materialId={}", materialId, exception);
-            return fallbackSearch(materialId, question, topK, exception);
+            log.warn("Failed to search material chunks from Milvus, materialIds={}", materialIds, exception);
+            return fallbackSearch(materialIds, question, topK, exception);
         }
     }
 
@@ -163,6 +168,19 @@ public class MilvusVectorStoreServiceImpl implements VectorStoreService {
 
     public static String buildMaterialFilter(Long materialId) {
         return FIELD_MATERIAL_ID + " == " + materialId;
+    }
+
+    public static String buildMaterialFilter(List<Long> materialIds) {
+        if (materialIds == null || materialIds.isEmpty()) {
+            throw new BusinessException(ResultCodeEnum.BAD_REQUEST, "materialIds cannot be empty");
+        }
+        if (materialIds.size() == 1) {
+            return buildMaterialFilter(materialIds.get(0));
+        }
+        return FIELD_MATERIAL_ID + " in [" + materialIds.stream()
+                .map(String::valueOf)
+                .reduce((left, right) -> left + "," + right)
+                .orElse("") + "]";
     }
 
     public static int batchCount(int itemCount, int batchSize) {
@@ -277,6 +295,14 @@ public class MilvusVectorStoreServiceImpl implements VectorStoreService {
             String question,
             Integer topK,
             Exception exception) {
+        return fallbackSearch(List.of(materialId), question, topK, exception);
+    }
+
+    private List<ChunkSearchResult> fallbackSearch(
+            List<Long> materialIds,
+            String question,
+            Integer topK,
+            Exception exception) {
         if (!Boolean.TRUE.equals(vectorStoreProperties.getFallbackToDatabase())
                 || databaseVectorStoreServiceProvider == null) {
             throwOriginalMilvusException(exception);
@@ -285,8 +311,8 @@ public class MilvusVectorStoreServiceImpl implements VectorStoreService {
         if (databaseVectorStoreService == null) {
             throwOriginalMilvusException(exception);
         }
-        log.warn("Fallback to database vector store for RAG search, materialId={}", materialId, exception);
-        return databaseVectorStoreService.searchByMaterialId(materialId, question, topK);
+        log.warn("Fallback to database vector store for RAG search, materialIds={}", materialIds, exception);
+        return databaseVectorStoreService.searchByMaterialIds(materialIds, question, topK);
     }
 
     private void throwOriginalMilvusException(Exception exception) {

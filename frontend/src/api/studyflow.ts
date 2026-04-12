@@ -44,8 +44,11 @@ export const studyflowApi = {
   getMaterialContent: (materialId: string) => request.get<MaterialContentVO>('/api/material-contents', { params: { materialId } }),
   getMaterialSummary: (materialId: string) => request.get<MaterialSummaryVO>('/api/material-summaries', { params: { materialId } }),
   generateMaterialSummary: (materialId: string) => request.post<MaterialSummaryVO>(`/api/material-summaries/${materialId}/generate`),
-  createQaSession: (materialId: string, sessionName?: string) =>
-    request.post<QaSessionVO>('/api/qa/sessions', { materialId, sessionName }),
+  listQaSessions: () => request.get<QaSessionVO[]>('/api/qa/sessions'),
+  createQaSession: (materialIds: string[], sessionName?: string) =>
+    request.post<QaSessionVO>('/api/qa/sessions', { materialIds, sessionName }),
+  updateQaSessionMaterials: (sessionId: string, materialIds: string[]) =>
+    request.put<QaSessionVO>(`/api/qa/sessions/${sessionId}/materials`, { materialIds }),
   askQuestion: (sessionId: string, data: AskQuestionRequest) => request.post<QaAnswerVO>(`/api/qa/sessions/${sessionId}/ask`, data),
   listQaMessages: (sessionId: string) => request.get<QaMessageVO[]>(`/api/qa/sessions/${sessionId}/messages`),
   generateReviewOutline: (data: GenerateReviewOutlineRequest) => request.post<StudyPlanDetailVO>('/api/study-plans/review-outline', data),

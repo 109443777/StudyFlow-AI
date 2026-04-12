@@ -9,4 +9,6 @@ public interface VectorStoreService {
     void upsertMaterialChunks(Long materialId, List<MaterialChunk> chunks);
 
     List<ChunkSearchResult> searchByMaterialId(Long materialId, String question, Integer topK);
+
+    List<ChunkSearchResult> searchByMaterialIds(List<Long> materialIds, String question, Integer topK);
 }

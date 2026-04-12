@@ -9,6 +9,10 @@ public class ChunkReferenceVO {
 
     private Long chunkId;
 
+    private Long materialId;
+
+    private String fileName;
+
     private Integer chunkIndex;
 
     private Double score;

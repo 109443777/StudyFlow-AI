@@ -41,6 +41,10 @@ export const request = {
     const response = await http.post<Result<T>>(url, data, config)
     return unwrapResult(response.data)
   },
+  async put<T, D = unknown>(url: string, data?: D, config?: AxiosRequestConfig<D>) {
+    const response = await http.put<Result<T>>(url, data, config)
+    return unwrapResult(response.data)
+  },
 }
 
 export function setAuthToken(token: string | null) {

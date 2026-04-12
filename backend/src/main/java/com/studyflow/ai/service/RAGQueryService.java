@@ -2,6 +2,7 @@ package com.studyflow.ai.service;
 
 import com.studyflow.ai.dto.AskQuestionDTO;
 import com.studyflow.ai.dto.CreateQaSessionDTO;
+import com.studyflow.ai.dto.UpdateQaSessionMaterialsDTO;
 import com.studyflow.ai.entity.QaMessage;
 import com.studyflow.ai.entity.QaSession;
 import com.studyflow.ai.service.rag.ChunkReference;
@@ -11,6 +12,12 @@ import java.util.List;
 public interface RAGQueryService {
 
     QaSession createSession(Long userId, CreateQaSessionDTO createQaSessionDTO);
+
+    List<QaSession> listSessions(Long userId);
+
+    List<Long> listSessionMaterialIds(Long userId, Long sessionId);
+
+    QaSession updateSessionMaterials(Long userId, Long sessionId, UpdateQaSessionMaterialsDTO updateQaSessionMaterialsDTO);
 
     QaAnswerResult ask(Long userId, Long sessionId, AskQuestionDTO askQuestionDTO);
 

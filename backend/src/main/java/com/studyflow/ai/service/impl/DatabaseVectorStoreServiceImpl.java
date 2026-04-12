@@ -44,8 +44,14 @@ public class DatabaseVectorStoreServiceImpl implements VectorStoreService {
 
     @Override
     public List<ChunkSearchResult> searchByMaterialId(Long materialId, String question, Integer topK) {
+        return searchByMaterialIds(List.of(materialId), question, topK);
+    }
+
+    @Override
+    public List<ChunkSearchResult> searchByMaterialIds(List<Long> materialIds, String question, Integer topK) {
         List<MaterialChunk> chunks = materialChunkMapper.selectList(new LambdaQueryWrapper<MaterialChunk>()
-                .eq(MaterialChunk::getMaterialId, materialId)
+                .in(MaterialChunk::getMaterialId, materialIds)
+                .orderByAsc(MaterialChunk::getMaterialId)
                 .orderByAsc(MaterialChunk::getChunkIndex));
         if (chunks.isEmpty()) {
             throw new BusinessException(ResultCodeEnum.VECTOR_INDEX_NOT_READY);

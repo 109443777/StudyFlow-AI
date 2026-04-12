@@ -93,13 +93,24 @@ export interface MaterialSummaryVO {
 export interface QaSessionVO {
   id: Id
   materialId: Id
+  materialIds: Id[]
+  materials: QaSessionMaterialVO[]
   sessionName: string
   createTime: string
   updateTime: string
 }
 
+export interface QaSessionMaterialVO {
+  id: Id
+  fileName: string
+  materialType: string
+  parseStatus: string
+}
+
 export interface ChunkReferenceVO {
   chunkId: Id
+  materialId?: Id
+  fileName?: string
   chunkIndex: number
   score: number
   chunkText: string
@@ -186,7 +197,8 @@ export interface LoginRequest {
 }
 
 export interface CreateQaSessionRequest {
-  materialId: Id
+  materialId?: Id
+  materialIds?: Id[]
   sessionName?: string
 }
 

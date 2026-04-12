@@ -13,6 +13,10 @@ public class ChunkReference {
 
     private Long chunkId;
 
+    private Long materialId;
+
+    private String fileName;
+
     private Integer chunkIndex;
 
     private Double score;
