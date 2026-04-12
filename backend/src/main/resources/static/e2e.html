@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StudyFlow AI 端到端测试台</title>
+    <meta name="studyflow-page" content="StudyFlow AI E2E Console">
+    <link rel="stylesheet" href="/e2e.css">
+</head>
+<body>
+<main class="e2e-shell">
+    <section class="hero">
+        <div>
+            <p class="eyebrow">StudyFlow AI E2E Console</p>
+            <h1>StudyFlow AI 端到端测试台</h1>
+            <p class="hero-copy">
+                这个页面用于手动跑通后端核心链路：健康检查、注册登录、资料上传、解析任务、AI 摘要、
+                向量化后的 RAG 问答，以及学习辅助计划。它只依赖当前 Spring Boot 静态资源能力，不需要单独启动前端工程。
+            </p>
+        </div>
+        <div class="status-card">
+            <span>当前登录状态</span>
+            <strong id="tokenStatus">未登录</strong>
+            <small id="lastAction">等待操作</small>
+        </div>
+    </section>
+
+    <section class="panel config-panel">
+        <h2>基础配置</h2>
+        <label>
+            API 地址
+            <input id="apiBase" placeholder="留空表示当前域名，例如 http://localhost:8080">
+        </label>
+        <div class="id-grid">
+            <label>
+                当前 materialId
+                <input id="materialId" placeholder="上传成功后自动填充，也可以手动输入">
+            </label>
+            <label>
+                当前 sessionId
+                <input id="sessionId" placeholder="创建问答会话后自动填充，也可以手动输入">
+            </label>
+        </div>
+        <div class="button-row">
+            <button data-action="health">检查后端健康状态</button>
+            <button data-action="clearLog" class="secondary">清空日志</button>
+            <button data-action="resetState" class="secondary">清空本地状态</button>
+        </div>
+    </section>
+
+    <section class="workflow">
+        <article class="panel">
+            <h2>1. 用户身份</h2>
+            <p>先注册或登录，后续受保护接口会自动带上 JWT。</p>
+            <div class="form-grid">
+                <label>用户名 <input id="username" value="studyflow_tester"></label>
+                <label>昵称 <input id="nickname" value="学习测试员"></label>
+                <label>密码 <input id="password" type="password" value="StudyFlow123"></label>
+            </div>
+            <div class="button-row">
+                <button data-action="register">注册</button>
+                <button data-action="login">登录并保存 Token</button>
+                <button data-action="me" class="secondary">获取当前用户</button>
+            </div>
+        </article>
+
+        <article class="panel">
+            <h2>2. 普通资料上传</h2>
+            <p>支持 PDF、PPT/PPTX、Word/DOCX、TXT、Markdown、MP4、MP3、WAV 等后端已校验的类型。</p>
+            <input id="materialFile" type="file">
+            <div class="button-row">
+                <button data-action="upload">上传资料到 MinIO</button>
+                <button data-action="materialDetail" class="secondary">查询资料详情</button>
+                <button data-action="myMaterials" class="secondary">我的资料列表</button>
+            </div>
+        </article>
+
+        <article class="panel">
+            <h2>3. 解析任务与内容</h2>
+            <p>上传成功后会创建异步解析任务；这里可以查询任务状态，也可以手动触发一次解析调度。</p>
+            <div class="button-row">
+                <button data-action="dispatchParse">手动投递解析任务</button>
+                <button data-action="parseTasks" class="secondary">查询解析任务</button>
+                <button data-action="materialContent" class="secondary">查询解析文本</button>
+                <button data-action="mediaTranscript" class="secondary">查询音视频转写</button>
+            </div>
+        </article>
+
+        <article class="panel">
+            <h2>4. AI 摘要与学习辅助</h2>
+            <p>这里会走 AiGateway。若本地配置启用了真实 LangChain4j Provider，会调用真实模型。</p>
+            <label>
+                考试日期
+                <input id="examDate" type="date">
+            </label>
+            <div class="button-row">
+                <button data-action="generateSummary">生成 AI 摘要</button>
+                <button data-action="summary" class="secondary">查询摘要结果</button>
+                <button data-action="reviewOutline" class="secondary">生成复习提纲</button>
+                <button data-action="studyPlan" class="secondary">生成 7 天复习计划</button>
+            </div>
+        </article>
+
+        <article class="panel wide">
+            <h2>5. 基于资料的 RAG 问答</h2>
+            <p>问答会基于 materialId 对应的切片向量召回结果组织上下文，不是普通闲聊接口。</p>
+            <div class="form-grid">
+                <label>会话名称 <input id="sessionName" value="课程资料问答测试"></label>
+                <label>召回 topK <input id="topK" type="number" min="1" max="10" value="5"></label>
+            </div>
+            <label>
+                问题
+                <textarea id="question" rows="4">请基于我上传的资料，用适合期末复习的方式总结这份内容的重点。</textarea>
+            </label>
+            <div class="button-row">
+                <button data-action="createSession">创建问答会话</button>
+                <button data-action="ask">基于资料提问</button>
+                <button data-action="qaHistory" class="secondary">查询问答历史</button>
+            </div>
+        </article>
+    </section>
+
+    <section class="result-layout">
+        <article class="panel">
+            <h2>最近一次响应</h2>
+            <pre id="responseBox">{}</pre>
+        </article>
+        <article class="panel">
+            <h2>请求日志</h2>
+            <ol id="logList" class="log-list"></ol>
+        </article>
+    </section>
+</main>
+<script src="/e2e.js"></script>
+</body>
+</html>

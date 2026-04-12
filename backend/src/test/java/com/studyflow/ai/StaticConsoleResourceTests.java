@@ -31,4 +31,25 @@ class StaticConsoleResourceTests {
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("applyChineseConsoleLocale")));
     }
+
+    @Test
+    void shouldServeGuidedE2eConsole() throws Exception {
+        mockMvc.perform(get("/e2e.html"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("StudyFlow AI E2E Console")));
+    }
+
+    @Test
+    void shouldServeGuidedE2eConsoleScript() throws Exception {
+        mockMvc.perform(get("/e2e.js"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("StudyFlowE2EConsole")));
+    }
+
+    @Test
+    void shouldServeGuidedE2eConsoleStyles() throws Exception {
+        mockMvc.perform(get("/e2e.css"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("e2e-shell")));
+    }
 }
