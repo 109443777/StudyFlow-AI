@@ -464,6 +464,14 @@ function requireNumericValue(input, fieldName) {
     return parsedValue;
 }
 
+function requireIntegerStringValue(input, fieldName) {
+    const value = requireTrimmedValue(input, fieldName);
+    if (!/^\d+$/.test(value)) {
+        throw new Error(`${fieldName} must be a valid integer`);
+    }
+    return value;
+}
+
 function requireFile(input, fieldName) {
     const file = input && input.files ? input.files[0] : null;
     if (!file) {
@@ -777,7 +785,7 @@ async function handleMaterialDetail(button, output) {
     setButtonBusy(button, true);
     try {
         const materialIdInput = document.getElementById("materialDetailIdInput");
-        const materialId = requireNumericValue(materialIdInput, "materialId");
+        const materialId = requireIntegerStringValue(materialIdInput, "materialId");
         const payload = await apiRequest(`/api/materials/${materialId}`);
         rememberMaterialFromPayload(payload.data);
         renderJson(output, payload.data);
@@ -834,7 +842,7 @@ async function handleDispatchParse(button, output) {
     setButtonBusy(button, true);
     try {
         const materialIdInput = document.getElementById("dispatchMaterialIdInput");
-        const materialId = requireNumericValue(materialIdInput, "materialId");
+        const materialId = requireIntegerStringValue(materialIdInput, "materialId");
         const payload = await apiRequest(`/api/parse-tasks/materials/${materialId}/dispatch`, {
             method: "POST"
         });
@@ -851,7 +859,7 @@ async function handleMaterialContent(button, output) {
     setButtonBusy(button, true);
     try {
         const materialIdInput = document.getElementById("materialContentIdInput");
-        const materialId = requireNumericValue(materialIdInput, "materialId");
+        const materialId = requireIntegerStringValue(materialIdInput, "materialId");
         const payload = await apiRequest(`/api/material-contents${buildQueryString({ materialId })}`);
         if (payload.data && payload.data.materialId !== undefined) {
             rememberMaterialId(payload.data.materialId);
@@ -868,7 +876,7 @@ async function handleMaterialSummary(button, output) {
     setButtonBusy(button, true);
     try {
         const materialIdInput = document.getElementById("materialSummaryIdInput");
-        const materialId = requireNumericValue(materialIdInput, "materialId");
+        const materialId = requireIntegerStringValue(materialIdInput, "materialId");
         const payload = await apiRequest(`/api/material-summaries${buildQueryString({ materialId })}`);
         if (payload.data && payload.data.materialId !== undefined) {
             rememberMaterialId(payload.data.materialId);
@@ -885,7 +893,7 @@ async function handleGenerateSummary(button, output) {
     setButtonBusy(button, true);
     try {
         const materialIdInput = document.getElementById("materialSummaryIdInput");
-        const materialId = requireNumericValue(materialIdInput, "materialId");
+        const materialId = requireIntegerStringValue(materialIdInput, "materialId");
         const payload = await apiRequest(`/api/material-summaries/${materialId}/generate`, {
             method: "POST"
         });
@@ -904,7 +912,7 @@ async function handleMediaTranscript(button, output) {
     setButtonBusy(button, true);
     try {
         const materialIdInput = document.getElementById("mediaTranscriptIdInput");
-        const materialId = requireNumericValue(materialIdInput, "materialId");
+        const materialId = requireIntegerStringValue(materialIdInput, "materialId");
         const payload = await apiRequest(`/api/media-transcripts${buildQueryString({ materialId })}`);
         if (payload.data && payload.data.materialId !== undefined) {
             rememberMaterialId(payload.data.materialId);
@@ -925,7 +933,7 @@ async function handleQaSessionCreate(form, button, output) {
         const payload = await apiRequest("/api/qa/sessions", {
             method: "POST",
             body: {
-                materialId: requireNumericValue(materialIdInput, "materialId"),
+                materialId: requireIntegerStringValue(materialIdInput, "materialId"),
                 sessionName: sessionNameInput ? sessionNameInput.value.trim() : ""
             }
         });
@@ -988,7 +996,7 @@ async function handleReviewOutline(form, button, output) {
         const payload = await apiRequest("/api/study-plans/review-outline", {
             method: "POST",
             body: {
-                materialId: requireNumericValue(materialIdInput, "materialId"),
+                materialId: requireIntegerStringValue(materialIdInput, "materialId"),
                 planName: planNameInput ? planNameInput.value.trim() : ""
             }
         });
@@ -1012,7 +1020,7 @@ async function handleExamPlan(form, button, output) {
         const payload = await apiRequest("/api/study-plans/exam-plan", {
             method: "POST",
             body: {
-                materialId: requireNumericValue(materialIdInput, "materialId"),
+                materialId: requireIntegerStringValue(materialIdInput, "materialId"),
                 examDate: requireTrimmedValue(examDateInput, "examDate"),
                 planName: planNameInput ? planNameInput.value.trim() : ""
             }

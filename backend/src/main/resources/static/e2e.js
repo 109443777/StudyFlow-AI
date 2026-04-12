@@ -106,14 +106,14 @@ const StudyFlowE2EConsole = (() => {
         reviewOutline: () => request("/api/study-plans/review-outline", {
             method: "POST",
             body: {
-                materialId: Number(requiredMaterialId()),
+                materialId: requiredMaterialId(),
                 planName: "端到端测试复习提纲"
             }
         }),
         studyPlan: () => request("/api/study-plans/exam-plan", {
             method: "POST",
             body: {
-                materialId: Number(requiredMaterialId()),
+                materialId: requiredMaterialId(),
                 examDate: value("examDate"),
                 planName: "端到端测试 7 天复习计划"
             }
@@ -122,7 +122,7 @@ const StudyFlowE2EConsole = (() => {
             const result = await request("/api/qa/sessions", {
                 method: "POST",
                 body: {
-                    materialId: Number(requiredMaterialId()),
+                    materialId: requiredMaterialId(),
                     sessionName: value("sessionName")
                 }
             });
