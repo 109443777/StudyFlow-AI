@@ -12,7 +12,8 @@ import org.springframework.context.annotation.Configuration;
         JwtProperties.class,
         RagProperties.class,
         UploadProperties.class,
-        TranscriptionProperties.class
+        TranscriptionProperties.class,
+        VectorStoreProperties.class
 })
 public class InfrastructurePropertiesConfig {
 }

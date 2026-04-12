@@ -106,6 +106,14 @@ studyflow:
     chunk-overlap: ${STUDYFLOW_RAG_CHUNK_OVERLAP:120}
     top-k: ${STUDYFLOW_RAG_TOP_K:4}
     history-size: ${STUDYFLOW_RAG_HISTORY_SIZE:6}
+  vector-store:
+    provider: ${STUDYFLOW_VECTOR_STORE_PROVIDER:database}
+    milvus:
+      uri: ${MILVUS_URI:http://localhost:19530}
+      token: ${MILVUS_TOKEN:}
+      collection-name: ${MILVUS_COLLECTION_NAME:studyflow_material_chunks}
+      dimension: ${MILVUS_DIMENSION:1024}
+      metric-type: ${MILVUS_METRIC_TYPE:COSINE}
   transcription:
     provider: ${TRANSCRIPTION_PROVIDER:mock}
     mock-prefix: ${TRANSCRIPTION_MOCK_PREFIX:[Mock Transcript]}
