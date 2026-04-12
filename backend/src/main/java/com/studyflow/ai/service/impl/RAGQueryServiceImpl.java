@@ -24,6 +24,7 @@ import com.studyflow.ai.service.RAGQueryService;
 import com.studyflow.ai.service.VectorStoreService;
 import com.studyflow.ai.service.rag.ChunkReference;
 import com.studyflow.ai.service.rag.QaAnswerResult;
+import com.studyflow.ai.service.rag.QaAnswerStreamObserver;
 import com.studyflow.ai.service.rag.QaSessionContextCache;
 import com.studyflow.ai.service.rag.RagPromptBuilder;
 import com.studyflow.ai.service.vector.ChunkSearchResult;
@@ -134,70 +135,76 @@ public class RAGQueryServiceImpl implements RAGQueryService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public QaAnswerResult ask(Long userId, Long sessionId, AskQuestionDTO askQuestionDTO) {
-        QaSession qaSession = getOwnedSession(userId, sessionId);
-        List<Long> materialIds = listSessionMaterialIds(userId, qaSession.getId());
-        if (materialIds.isEmpty()) {
-            materialIds = List.of(qaSession.getMaterialId());
-        }
-        List<Material> materials = getOwnedMaterials(userId, materialIds);
-        Map<Long, Material> materialMap = materials.stream()
-                .collect(Collectors.toMap(Material::getId, Function.identity()));
-        Material primaryMaterial = materials.get(0);
-        int topK = askQuestionDTO.getTopK() == null ? ragProperties.getTopK() : askQuestionDTO.getTopK();
-        List<ChunkSearchResult> searchResults = vectorStoreService.searchByMaterialIds(materialIds, askQuestionDTO.getQuestion(), topK);
-        if (searchResults.isEmpty()) {
-            throw new BusinessException(ResultCodeEnum.QA_CONTEXT_NOT_FOUND);
-        }
-        List<ChunkReference> references = searchResults.stream()
-                .map(item -> ChunkReference.builder()
-                        .chunkId(item.getChunk().getId())
-                        .materialId(item.getChunk().getMaterialId())
-                        .fileName(resolveReferenceFileName(materialMap, item.getChunk().getMaterialId()))
-                        .chunkIndex(item.getChunk().getChunkIndex())
-                        .score(item.getScore())
-                        .chunkText(item.getChunk().getChunkText())
-                        .build())
-                .toList();
-        List<String> contexts = references.stream()
-                .limit(3)
-                .map(item -> "File " + item.getFileName() + ", Chunk " + item.getChunkIndex() + ": "
-                        + trimContext(item.getChunkText()))
-                .toList();
-        String prompt = ragPromptBuilder.build(
-                primaryMaterial,
-                askQuestionDTO.getQuestion(),
-                qaSessionContextCache.recentHistory(qaSession.getId(), ragProperties.getHistorySize()));
+        AskExecutionContext context = buildAskExecutionContext(userId, sessionId, askQuestionDTO);
         long startTime = System.currentTimeMillis();
-        String answer = aiGateway.answer(prompt, contexts);
+        String answer = aiGateway.answer(context.prompt(), context.contexts());
         log.info("RAG answer generated, sessionId={}, materialIds={}, topK={}, costMs={}",
-                qaSession.getId(), materialIds, topK, System.currentTimeMillis() - startTime);
+                context.qaSession().getId(), context.materialIds(), context.topK(), System.currentTimeMillis() - startTime);
 
-        QaMessage questionMessage = new QaMessage();
-        questionMessage.setSessionId(qaSession.getId());
-        questionMessage.setUserId(userId);
-        questionMessage.setMaterialId(primaryMaterial.getId());
-        questionMessage.setRole(QaMessageRoleEnum.USER.name());
-        questionMessage.setContent(askQuestionDTO.getQuestion().trim());
-        qaMessageMapper.insert(questionMessage);
-
-        QaMessage answerMessage = new QaMessage();
-        answerMessage.setSessionId(qaSession.getId());
-        answerMessage.setUserId(userId);
-        answerMessage.setMaterialId(primaryMaterial.getId());
-        answerMessage.setRole(QaMessageRoleEnum.ASSISTANT.name());
-        answerMessage.setContent(answer);
-        answerMessage.setReferenceChunks(writeAsJson(references));
-        qaMessageMapper.insert(answerMessage);
-
-        qaSessionContextCache.append(qaSession.getId(), QaMessageRoleEnum.USER.name(), questionMessage.getContent(), ragProperties.getHistorySize());
-        qaSessionContextCache.append(qaSession.getId(), QaMessageRoleEnum.ASSISTANT.name(), answerMessage.getContent(), ragProperties.getHistorySize());
+        QaMessage questionMessage = persistQuestionMessage(userId, context.primaryMaterial(), context.qaSession(), askQuestionDTO);
+        QaMessage answerMessage = persistAnswerMessage(userId, context.primaryMaterial(), context.qaSession(), answer, context.references());
+        qaSessionContextCache.append(context.qaSession().getId(), QaMessageRoleEnum.USER.name(),
+                questionMessage.getContent(), ragProperties.getHistorySize());
+        qaSessionContextCache.append(context.qaSession().getId(), QaMessageRoleEnum.ASSISTANT.name(),
+                answerMessage.getContent(), ragProperties.getHistorySize());
 
         return QaAnswerResult.builder()
-                .sessionId(qaSession.getId())
+                .sessionId(context.qaSession().getId())
                 .questionMessage(questionMessage)
                 .answerMessage(answerMessage)
-                .references(references)
+                .references(context.references())
                 .build();
+    }
+
+    @Override
+    public void streamAnswer(Long userId, Long sessionId, AskQuestionDTO askQuestionDTO, QaAnswerStreamObserver observer) {
+        AskExecutionContext context = buildAskExecutionContext(userId, sessionId, askQuestionDTO);
+        QaMessage questionMessage = persistQuestionMessage(userId, context.primaryMaterial(), context.qaSession(), askQuestionDTO);
+        qaSessionContextCache.append(context.qaSession().getId(), QaMessageRoleEnum.USER.name(),
+                questionMessage.getContent(), ragProperties.getHistorySize());
+        observer.onContext(context.references());
+        StringBuilder answerBuilder = new StringBuilder();
+        long startTime = System.currentTimeMillis();
+        aiGateway.streamAnswer(context.prompt(), context.contexts(), new com.studyflow.ai.gateway.AiAnswerStreamHandler() {
+            @Override
+            public void onNext(String token) {
+                if (!StringUtils.hasText(token)) {
+                    return;
+                }
+                answerBuilder.append(token);
+                observer.onToken(token);
+            }
+
+            @Override
+            public void onComplete() {
+                try {
+                    String answer = answerBuilder.toString().trim();
+                    if (!StringUtils.hasText(answer)) {
+                        throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "AI answer is empty");
+                    }
+                    QaMessage answerMessage = persistAnswerMessage(
+                            userId, context.primaryMaterial(), context.qaSession(), answer, context.references());
+                    qaSessionContextCache.append(context.qaSession().getId(), QaMessageRoleEnum.ASSISTANT.name(),
+                            answerMessage.getContent(), ragProperties.getHistorySize());
+                    log.info("RAG streaming answer completed, sessionId={}, materialIds={}, topK={}, costMs={}",
+                            context.qaSession().getId(), context.materialIds(), context.topK(),
+                            System.currentTimeMillis() - startTime);
+                    observer.onComplete(QaAnswerResult.builder()
+                            .sessionId(context.qaSession().getId())
+                            .questionMessage(questionMessage)
+                            .answerMessage(answerMessage)
+                            .references(context.references())
+                            .build());
+                } catch (RuntimeException exception) {
+                    observer.onError(exception);
+                }
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                observer.onError(throwable);
+            }
+        });
     }
 
     @Override
@@ -305,5 +312,80 @@ public class RAGQueryServiceImpl implements RAGQueryService {
         }
         String normalized = text.replaceAll("\\s+", " ").trim();
         return normalized.length() <= 600 ? normalized : normalized.substring(0, 600) + "...";
+    }
+
+    private AskExecutionContext buildAskExecutionContext(Long userId, Long sessionId, AskQuestionDTO askQuestionDTO) {
+        QaSession qaSession = getOwnedSession(userId, sessionId);
+        List<Long> materialIds = listSessionMaterialIds(userId, qaSession.getId());
+        if (materialIds.isEmpty()) {
+            materialIds = List.of(qaSession.getMaterialId());
+        }
+        List<Material> materials = getOwnedMaterials(userId, materialIds);
+        Map<Long, Material> materialMap = materials.stream()
+                .collect(Collectors.toMap(Material::getId, Function.identity()));
+        Material primaryMaterial = materials.get(0);
+        int topK = askQuestionDTO.getTopK() == null ? ragProperties.getTopK() : askQuestionDTO.getTopK();
+        List<ChunkSearchResult> searchResults = vectorStoreService.searchByMaterialIds(materialIds, askQuestionDTO.getQuestion(), topK);
+        if (searchResults.isEmpty()) {
+            throw new BusinessException(ResultCodeEnum.QA_CONTEXT_NOT_FOUND);
+        }
+        List<ChunkReference> references = searchResults.stream()
+                .map(item -> ChunkReference.builder()
+                        .chunkId(item.getChunk().getId())
+                        .materialId(item.getChunk().getMaterialId())
+                        .fileName(resolveReferenceFileName(materialMap, item.getChunk().getMaterialId()))
+                        .chunkIndex(item.getChunk().getChunkIndex())
+                        .score(item.getScore())
+                        .chunkText(item.getChunk().getChunkText())
+                        .build())
+                .toList();
+        List<String> contexts = references.stream()
+                .limit(3)
+                .map(item -> "File " + item.getFileName() + ", Chunk " + item.getChunkIndex() + ": "
+                        + trimContext(item.getChunkText()))
+                .toList();
+        String prompt = ragPromptBuilder.build(
+                primaryMaterial,
+                askQuestionDTO.getQuestion(),
+                qaSessionContextCache.recentHistory(qaSession.getId(), ragProperties.getHistorySize()));
+        return new AskExecutionContext(qaSession, materialIds, primaryMaterial, topK, references, contexts, prompt);
+    }
+
+    private QaMessage persistQuestionMessage(Long userId, Material primaryMaterial, QaSession qaSession, AskQuestionDTO askQuestionDTO) {
+        QaMessage questionMessage = new QaMessage();
+        questionMessage.setSessionId(qaSession.getId());
+        questionMessage.setUserId(userId);
+        questionMessage.setMaterialId(primaryMaterial.getId());
+        questionMessage.setRole(QaMessageRoleEnum.USER.name());
+        questionMessage.setContent(askQuestionDTO.getQuestion().trim());
+        qaMessageMapper.insert(questionMessage);
+        return questionMessage;
+    }
+
+    private QaMessage persistAnswerMessage(
+            Long userId,
+            Material primaryMaterial,
+            QaSession qaSession,
+            String answer,
+            List<ChunkReference> references) {
+        QaMessage answerMessage = new QaMessage();
+        answerMessage.setSessionId(qaSession.getId());
+        answerMessage.setUserId(userId);
+        answerMessage.setMaterialId(primaryMaterial.getId());
+        answerMessage.setRole(QaMessageRoleEnum.ASSISTANT.name());
+        answerMessage.setContent(answer);
+        answerMessage.setReferenceChunks(writeAsJson(references));
+        qaMessageMapper.insert(answerMessage);
+        return answerMessage;
+    }
+
+    private record AskExecutionContext(
+            QaSession qaSession,
+            List<Long> materialIds,
+            Material primaryMaterial,
+            int topK,
+            List<ChunkReference> references,
+            List<String> contexts,
+            String prompt) {
     }
 }

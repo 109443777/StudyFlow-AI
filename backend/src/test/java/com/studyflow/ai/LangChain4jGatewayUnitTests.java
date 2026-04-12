@@ -14,6 +14,8 @@ import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.chat.StreamingChatLanguageModel;
+import dev.langchain4j.model.StreamingResponseHandler;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.output.Response;
 import java.util.ArrayList;
@@ -40,7 +42,7 @@ class LangChain4jGatewayUnitTests {
                 }
                 ```
                 """));
-        LangChain4jAiGateway gateway = new LangChain4jAiGateway(chatLanguageModel);
+        LangChain4jAiGateway gateway = new LangChain4jAiGateway(chatLanguageModel, new FakeStreamingChatLanguageModel());
 
         StudyContentAnalysisResult result = gateway.analyzeStudyContent(AiStudyContentRequest.builder()
                 .materialId(1L)
@@ -90,7 +92,7 @@ class LangChain4jGatewayUnitTests {
     @Test
     void shouldBuildLearningFocusedRagPromptWithNoiseFilteringGuidance() {
         PromptEchoChatLanguageModel chatLanguageModel = new PromptEchoChatLanguageModel();
-        LangChain4jAiGateway gateway = new LangChain4jAiGateway(chatLanguageModel);
+        LangChain4jAiGateway gateway = new LangChain4jAiGateway(chatLanguageModel, new FakeStreamingChatLanguageModel());
 
         String answer = gateway.answer(
                 """
@@ -114,7 +116,7 @@ class LangChain4jGatewayUnitTests {
         ChatLanguageModel chatLanguageModel = messages -> {
             throw new RuntimeException("java.io.InterruptedIOException: timeout");
         };
-        LangChain4jAiGateway gateway = new LangChain4jAiGateway(chatLanguageModel);
+        LangChain4jAiGateway gateway = new LangChain4jAiGateway(chatLanguageModel, new FakeStreamingChatLanguageModel());
 
         assertThatThrownBy(() -> gateway.answer("question", List.of("Chunk 1: content")))
                 .isInstanceOf(BusinessException.class)
@@ -162,6 +164,15 @@ class LangChain4jGatewayUnitTests {
         @Override
         public Response<AiMessage> generate(List<ChatMessage> messages) {
             return Response.from(AiMessage.from(messages.toString()));
+        }
+    }
+
+    private static class FakeStreamingChatLanguageModel implements StreamingChatLanguageModel {
+
+        @Override
+        public void generate(List<ChatMessage> messages, StreamingResponseHandler<AiMessage> handler) {
+            handler.onNext("streaming answer");
+            handler.onComplete(Response.from(AiMessage.from("streaming answer")));
         }
     }
 }

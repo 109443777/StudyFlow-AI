@@ -124,6 +124,17 @@ export interface QaAnswerVO {
   references: ChunkReferenceVO[]
 }
 
+export interface QaStreamEventVO {
+  type: 'context' | 'chunk' | 'done' | 'error'
+  sessionId?: Id
+  questionMessageId?: Id
+  answerMessageId?: Id
+  content?: string
+  answer?: string
+  message?: string
+  references?: ChunkReferenceVO[]
+}
+
 export interface QaMessageVO {
   id: Id
   role: string

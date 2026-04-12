@@ -9,7 +9,7 @@ describe('result utilities', () => {
 
   it('maps vector-not-ready errors to a student-friendly Chinese message', () => {
     expect(() => unwrapResult({ code: 40006, message: 'vector index is not ready', data: null }))
-      .toThrow('向量索引还没有生成完成，请稍后再试。')
+      .toThrow('资料的问答索引还没有准备完成，请稍后再试。')
   })
 
   it('preserves unknown backend messages as fallback display text', () => {

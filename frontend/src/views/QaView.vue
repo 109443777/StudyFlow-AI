@@ -5,7 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 
 import { studyflowApi } from '@/api/studyflow'
 import StatusBadge from '@/components/StatusBadge.vue'
-import type { MaterialVO, QaMessageVO, QaSessionVO } from '@/types/api'
+import type { ChunkReferenceVO, MaterialVO, QaMessageVO, QaSessionVO, QaStreamEventVO } from '@/types/api'
 import { buildQaAnswerLoadingSteps } from '@/utils/materialStatus'
 import { getDisplayError } from '@/utils/result'
 
@@ -61,6 +61,7 @@ async function loadWorkspace() {
     if (!queryMaterialId && availableMaterials.value.length > 0) {
       selectedMaterialIds.value = [availableMaterials.value[0].id]
     }
+    sessionName.value = buildDefaultSessionName()
   } catch (err) {
     ElMessage.error(getDisplayError(err))
   } finally {
@@ -80,8 +81,12 @@ async function activateSession(qaSession: QaSessionVO) {
 }
 
 async function createSession() {
+  return createSessionInternal(true)
+}
+
+async function createSessionInternal(showSuccess: boolean) {
   if (!ensureReadyMaterialSelection()) {
-    return
+    return undefined
   }
   creatingSession.value = true
   try {
@@ -89,9 +94,13 @@ async function createSession() {
     const qaSession = await studyflowApi.createQaSession(selectedMaterialIds.value, name)
     sessions.value = [qaSession, ...sessions.value]
     await activateSession(qaSession)
-    ElMessage.success('已创建新的持久化对话')
+    if (showSuccess) {
+      ElMessage.success('已创建新的持久化对话')
+    }
+    return qaSession
   } catch (err) {
     ElMessage.error(getDisplayError(err))
+    return undefined
   } finally {
     creatingSession.value = false
   }
@@ -123,37 +132,82 @@ async function ask() {
     ElMessage.warning('请输入问题')
     return
   }
-  if (!activeSession.value) {
-    await createSession()
+
+  let session = activeSession.value
+  if (!session) {
+    session = await createSessionInternal(false)
   }
-  if (!activeSession.value) {
+  if (!session) {
     return
   }
-  asking.value = true
-  startAnswerLoading()
+
   const question = currentQuestion.value.trim()
   currentQuestion.value = ''
-  messages.value.push({
+  asking.value = true
+  startAnswerLoading()
+
+  const questionMessage: QaMessageVO = {
     id: `local-question-${Date.now()}`,
     role: 'USER',
     content: question,
     referenceChunks: [],
     createTime: new Date().toISOString(),
-  })
+  }
+  const assistantMessage: QaMessageVO = {
+    id: `local-answer-${Date.now()}`,
+    role: 'ASSISTANT',
+    content: '',
+    referenceChunks: [],
+    createTime: new Date().toISOString(),
+  }
+  messages.value.push(questionMessage, assistantMessage)
+
+  let latestReferences: ChunkReferenceVO[] = []
   try {
-    const answer = await studyflowApi.askQuestion(activeSession.value.id, { question, topK: topK.value })
-    messages.value.push({
-      id: answer.answerMessageId,
-      role: 'ASSISTANT',
-      content: answer.answer,
-      referenceChunks: answer.references,
-      createTime: new Date().toISOString(),
+    await studyflowApi.streamQuestion(session.id, { question, topK: topK.value }, {
+      onEvent: (event) => applyStreamEvent(event, questionMessage, assistantMessage, latestReferences),
     })
+    if (!assistantMessage.content.trim()) {
+      assistantMessage.content = '本次没有返回有效回答，请稍后再试。'
+    }
   } catch (err) {
+    if (!assistantMessage.content.trim()) {
+      messages.value = messages.value.filter((item) => item.id !== assistantMessage.id)
+    } else {
+      assistantMessage.content += '\n\n回答中断，请稍后重试。'
+    }
     ElMessage.error(getDisplayError(err))
   } finally {
     stopAnswerLoading()
     asking.value = false
+  }
+}
+
+function applyStreamEvent(
+  event: QaStreamEventVO,
+  questionMessage: QaMessageVO,
+  assistantMessage: QaMessageVO,
+  latestReferences: ChunkReferenceVO[],
+) {
+  if (event.type === 'context') {
+    latestReferences.splice(0, latestReferences.length, ...((event.references || []) as ChunkReferenceVO[]))
+    assistantMessage.referenceChunks = [...latestReferences]
+    return
+  }
+  if (event.type === 'chunk') {
+    assistantMessage.content += event.content || ''
+    assistantMessage.referenceChunks = [...latestReferences]
+    return
+  }
+  if (event.type === 'done') {
+    questionMessage.id = event.questionMessageId || questionMessage.id
+    assistantMessage.id = event.answerMessageId || assistantMessage.id
+    assistantMessage.content = event.answer || assistantMessage.content
+    assistantMessage.referenceChunks = (event.references || latestReferences) as ChunkReferenceVO[]
+    return
+  }
+  if (event.type === 'error') {
+    throw new Error(event.message || '流式问答失败')
   }
 }
 
@@ -214,7 +268,7 @@ function ensureReadyMaterialSelection() {
   }
   const notReadyMaterial = selectedMaterials.value.find((material) => !isMaterialReady(material))
   if (notReadyMaterial) {
-    ElMessage.warning(`《${notReadyMaterial.fileName}》还没有完成解析和向量化，请稍后再选`)
+    ElMessage.warning(`《${notReadyMaterial.fileName}》还没有完成解析和向量化，请稍后再试`)
     return false
   }
   return true
@@ -300,7 +354,7 @@ onUnmounted(stopAnswerLoading)
           </el-button>
         </div>
         <p class="muted scope-tip">
-          当前选中 {{ selectedMaterialIds.length }} 份资料。只有解析成功的资料可用于问答，后续提问只会在这些资料的向量片段中检索。
+          当前选中 {{ selectedMaterialIds.length }} 份资料。只有解析成功的资料可用于问答，提问时只会在这些资料的向量片段中检索。
         </p>
       </div>
     </aside>
@@ -310,7 +364,7 @@ onUnmounted(stopAnswerLoading)
         <div>
           <h2 class="section-title">{{ activeSessionTitle }}</h2>
           <p class="muted">
-            基于当前对话绑定的资料回答；对话历史会持久化保存，切换回来后可继续追问。
+            回答会严格基于当前会话绑定的资料；对话历史会持久化保存，下次回来还可以继续追问。
           </p>
         </div>
         <div class="topk-control">
@@ -319,7 +373,7 @@ onUnmounted(stopAnswerLoading)
         </div>
       </div>
 
-      <div class="selected-materials" v-if="selectedMaterials.length">
+      <div v-if="selectedMaterials.length" class="selected-materials">
         <el-tag v-for="material in selectedMaterials" :key="material.id" effect="plain">
           {{ material.fileName }}
         </el-tag>
@@ -328,11 +382,11 @@ onUnmounted(stopAnswerLoading)
       <div class="messages">
         <el-empty
           v-if="messages.length === 0"
-          description="选择左侧资料并提问，StudyFlow AI 会基于资料片段回答"
+          description="选择左侧资料并提问，StudyFlow AI 会基于资料片段进行回答"
         />
         <article v-for="message in messages" :key="message.id" class="message" :class="message.role.toLowerCase()">
           <strong>{{ message.role === 'USER' ? '我' : 'StudyFlow AI' }}</strong>
-          <p class="text-block">{{ message.content }}</p>
+          <p class="text-block">{{ message.content || (message.role === 'ASSISTANT' && asking ? '正在生成回答...' : '') }}</p>
           <el-collapse v-if="message.referenceChunks?.length">
             <el-collapse-item title="查看引用片段">
               <div v-for="reference in message.referenceChunks" :key="reference.chunkId" class="reference">
@@ -350,7 +404,7 @@ onUnmounted(stopAnswerLoading)
       <el-alert
         v-if="asking"
         :title="answerLoadingSteps[loadingStepIndex]"
-        :description="loadingStepIndex === 0 ? '先从当前会话绑定的资料中召回最相关片段。' : '已拿到参考片段，正在组织上下文并请求大模型。'"
+        :description="loadingStepIndex === 0 ? '先从当前会话绑定的资料中召回最相关片段。' : '已经拿到参考片段，正在流式生成回答。'"
         type="info"
         :closable="false"
         show-icon
@@ -362,7 +416,7 @@ onUnmounted(stopAnswerLoading)
           v-model="currentQuestion"
           type="textarea"
           :rows="3"
-          placeholder="例如：请综合当前选中的几份资料，总结考试最可能考到的重点"
+          placeholder="例如：请结合当前选中的几份资料，总结考试最可能考到的重点"
           @keydown.ctrl.enter="ask"
         />
         <el-button type="primary" size="large" :loading="asking || creatingSession" @click="ask">

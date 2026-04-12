@@ -7,6 +7,7 @@ import com.studyflow.ai.entity.QaMessage;
 import com.studyflow.ai.entity.QaSession;
 import com.studyflow.ai.service.rag.ChunkReference;
 import com.studyflow.ai.service.rag.QaAnswerResult;
+import com.studyflow.ai.service.rag.QaAnswerStreamObserver;
 import java.util.List;
 
 public interface RAGQueryService {
@@ -22,6 +23,8 @@ public interface RAGQueryService {
     void deleteSession(Long userId, Long sessionId);
 
     QaAnswerResult ask(Long userId, Long sessionId, AskQuestionDTO askQuestionDTO);
+
+    void streamAnswer(Long userId, Long sessionId, AskQuestionDTO askQuestionDTO, QaAnswerStreamObserver observer);
 
     List<QaMessage> listHistory(Long userId, Long sessionId);
 

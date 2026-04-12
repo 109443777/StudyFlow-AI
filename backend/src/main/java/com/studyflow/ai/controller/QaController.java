@@ -20,8 +20,10 @@ import com.studyflow.ai.vo.QaAnswerVO;
 import com.studyflow.ai.vo.QaMessageVO;
 import com.studyflow.ai.vo.QaSessionMaterialVO;
 import com.studyflow.ai.vo.QaSessionVO;
+import com.studyflow.ai.vo.QaStreamEventVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import java.io.IOException;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +40,8 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import org.springframework.http.MediaType;
 
 @Validated
 @Tag(name = "RAG QA")
@@ -104,6 +108,66 @@ public class QaController {
                 .answer(result.getAnswerMessage().getContent())
                 .references(toReferenceVOs(result.getReferences()))
                 .build());
+    }
+
+    @LoginRequired
+    @RateLimit(scene = "rag_ask", limit = 20, windowSeconds = 60, target = RateLimitTarget.USER,
+            message = "AI question answering is too frequent, please retry later")
+    @Operation(summary = "Ask question for a material session with streaming response")
+    @PostMapping(value = "/sessions/{sessionId}/ask/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter askQuestionStream(@PathVariable Long sessionId, @Valid @RequestBody AskQuestionDTO askQuestionDTO) {
+        Long userId = UserContext.getRequiredUserId();
+        SseEmitter emitter = new SseEmitter(0L);
+        emitter.onTimeout(emitter::complete);
+        emitter.onError(exception -> emitter.complete());
+        try {
+            ragQueryService.streamAnswer(userId, sessionId, askQuestionDTO, new com.studyflow.ai.service.rag.QaAnswerStreamObserver() {
+                @Override
+                public void onContext(List<ChunkReference> references) {
+                    sendEvent(emitter, "context", QaStreamEventVO.builder()
+                            .type("context")
+                            .references(toReferenceVOs(references))
+                            .build());
+                }
+
+                @Override
+                public void onToken(String token) {
+                    sendEvent(emitter, "chunk", QaStreamEventVO.builder()
+                            .type("chunk")
+                            .content(token)
+                            .build());
+                }
+
+                @Override
+                public void onComplete(QaAnswerResult result) {
+                    sendEvent(emitter, "done", QaStreamEventVO.builder()
+                            .type("done")
+                            .sessionId(String.valueOf(result.getSessionId()))
+                            .questionMessageId(String.valueOf(result.getQuestionMessage().getId()))
+                            .answerMessageId(String.valueOf(result.getAnswerMessage().getId()))
+                            .answer(result.getAnswerMessage().getContent())
+                            .references(toReferenceVOs(result.getReferences()))
+                            .build());
+                    emitter.complete();
+                }
+
+                @Override
+                public void onError(Throwable throwable) {
+                    sendEvent(emitter, "error", QaStreamEventVO.builder()
+                            .type("error")
+                            .message(throwable.getMessage())
+                            .build());
+                    emitter.completeWithError(throwable);
+                }
+            });
+        } catch (RuntimeException exception) {
+            sendEvent(emitter, "error", QaStreamEventVO.builder()
+                    .type("error")
+                    .message(exception.getMessage())
+                    .build());
+            emitter.completeWithError(exception);
+        }
+        return emitter;
     }
 
     @LoginRequired
@@ -177,5 +241,15 @@ public class QaController {
                         .parseStatus(material.getParseStatus())
                         .build())
                 .toList();
+    }
+
+    private void sendEvent(SseEmitter emitter, String eventName, QaStreamEventVO payload) {
+        try {
+            emitter.send(SseEmitter.event()
+                    .name(eventName)
+                    .data(payload, MediaType.APPLICATION_JSON));
+        } catch (IOException exception) {
+            throw new IllegalStateException("failed to write stream event", exception);
+        }
     }
 }

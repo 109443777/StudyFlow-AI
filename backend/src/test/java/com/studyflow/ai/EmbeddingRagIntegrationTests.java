@@ -3,7 +3,9 @@ package com.studyflow.ai;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
@@ -41,6 +43,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -299,6 +302,57 @@ class EmbeddingRagIntegrationTests {
                 qaSession.getId()));
         Assertions.assertEquals(0L, jdbcTemplate.queryForObject(
                 "select count(1) from qa_session_material where session_id = ?",
+                Long.class,
+                qaSession.getId()));
+    }
+
+    @Test
+    void shouldStreamRagAnswerAndPersistMessages() throws Exception {
+        Material material = createMaterial();
+        buildEmbeddingIndex(material);
+
+        mockMvc.perform(post("/api/qa/sessions")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "materialId": %d,
+                                  "sessionName": "Streaming Review"
+                                }
+                                """.formatted(material.getId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        QaSession qaSession = qaSessionMapper.selectOne(Wrappers.<QaSession>lambdaQuery()
+                .eq(QaSession::getMaterialId, material.getId())
+                .eq(QaSession::getUserId, userId)
+                .eq(QaSession::getSessionName, "Streaming Review")
+                .last("limit 1"));
+        Assertions.assertNotNull(qaSession);
+
+        MvcResult mvcResult = mockMvc.perform(post("/api/qa/sessions/{sessionId}/ask/stream", qaSession.getId())
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "question": "Explain matrices in a student-friendly way.",
+                                  "topK": 2
+                                }
+                                """))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        mockMvc.perform(asyncDispatch(mvcResult))
+                .andExpect(status().isOk());
+
+        String body = mvcResult.getResponse().getContentAsString();
+        Assertions.assertTrue(body.contains("event:context"));
+        Assertions.assertTrue(body.contains("event:chunk"));
+        Assertions.assertTrue(body.contains("event:done"));
+        Assertions.assertTrue(body.contains("\"references\""));
+
+        Assertions.assertEquals(2L, jdbcTemplate.queryForObject(
+                "select count(1) from qa_message where session_id = ?",
                 Long.class,
                 qaSession.getId()));
     }

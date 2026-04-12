@@ -1,4 +1,4 @@
-import { request } from './request'
+import { getAuthToken, request } from './request'
 import type {
   AskQuestionRequest,
   GenerateReviewOutlineRequest,
@@ -13,11 +13,14 @@ import type {
   QaAnswerVO,
   QaMessageVO,
   QaSessionVO,
+  QaStreamEventVO,
   RegisterRequest,
   StudyPlanDetailVO,
   StudyPlanHistoryVO,
   UserInfoVO,
 } from '@/types/api'
+import { StudyFlowError } from '@/utils/result'
+import { parseQaStreamChunk } from '@/utils/qaStream'
 
 export const studyflowApi = {
   health: () => request.get<HealthCheckVO>('/api/health'),
@@ -49,9 +52,53 @@ export const studyflowApi = {
     request.post<QaSessionVO>('/api/qa/sessions', { materialIds, sessionName }),
   updateQaSessionMaterials: (sessionId: string, materialIds: string[]) =>
     request.put<QaSessionVO>(`/api/qa/sessions/${sessionId}/materials`, { materialIds }),
-  deleteQaSession: (sessionId: string) =>
-    request.delete<void>(`/api/qa/sessions/${sessionId}`),
-  askQuestion: (sessionId: string, data: AskQuestionRequest) => request.post<QaAnswerVO>(`/api/qa/sessions/${sessionId}/ask`, data),
+  deleteQaSession: (sessionId: string) => request.delete<void>(`/api/qa/sessions/${sessionId}`),
+  askQuestion: (sessionId: string, data: AskQuestionRequest) =>
+    request.post<QaAnswerVO>(`/api/qa/sessions/${sessionId}/ask`, data),
+  streamQuestion: async (
+    sessionId: string,
+    data: AskQuestionRequest,
+    handlers: {
+      onEvent: (event: QaStreamEventVO) => void
+    },
+  ) => {
+    const token = getAuthToken()
+    const response = await fetch(`/api/qa/sessions/${sessionId}/ask/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(data),
+    })
+
+    if (!response.ok) {
+      throw new StudyFlowError(response.status, '问答流式请求失败，请稍后再试。')
+    }
+    if (!response.body) {
+      throw new StudyFlowError(50000, '浏览器未返回可读取的流式响应。')
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder('utf-8')
+    let remainder = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) {
+        break
+      }
+      const text = decoder.decode(value, { stream: true })
+      const parsed = parseQaStreamChunk(remainder + text)
+      remainder = parsed.remainder
+      parsed.events.forEach((event) => handlers.onEvent(event as QaStreamEventVO))
+    }
+
+    if (remainder.trim()) {
+      const parsed = parseQaStreamChunk(remainder + '\n\n')
+      parsed.events.forEach((event) => handlers.onEvent(event as QaStreamEventVO))
+    }
+  },
   listQaMessages: (sessionId: string) => request.get<QaMessageVO[]>(`/api/qa/sessions/${sessionId}/messages`),
   generateReviewOutline: (data: GenerateReviewOutlineRequest) => request.post<StudyPlanDetailVO>('/api/study-plans/review-outline', data),
   generateExamPlan: (data: GenerateStudyPlanRequest) => request.post<StudyPlanDetailVO>('/api/study-plans/exam-plan', data),

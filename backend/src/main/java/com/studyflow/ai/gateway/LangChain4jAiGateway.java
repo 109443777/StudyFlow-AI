@@ -11,7 +11,9 @@ import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import dev.langchain4j.model.output.Response;
+import dev.langchain4j.model.StreamingResponseHandler;
 import java.util.List;
 import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
@@ -25,8 +27,13 @@ public class LangChain4jAiGateway implements AiGateway {
 
     private final ChatLanguageModel chatLanguageModel;
 
-    public LangChain4jAiGateway(ChatLanguageModel chatLanguageModel) {
+    private final StreamingChatLanguageModel streamingChatLanguageModel;
+
+    public LangChain4jAiGateway(
+            ChatLanguageModel chatLanguageModel,
+            StreamingChatLanguageModel streamingChatLanguageModel) {
         this.chatLanguageModel = chatLanguageModel;
+        this.streamingChatLanguageModel = streamingChatLanguageModel;
     }
 
     @Override
@@ -60,6 +67,41 @@ public class LangChain4jAiGateway implements AiGateway {
                     "langchain4j ai returned an empty answer");
         }
         return answer.trim();
+    }
+
+    @Override
+    public void streamAnswer(String question, List<String> contexts, AiAnswerStreamHandler streamHandler) {
+        try {
+            streamingChatLanguageModel.generate(
+                    List.of(
+                            SystemMessage.from(buildRagSystemPrompt()),
+                            UserMessage.from(buildRagUserPrompt(question, contexts))),
+                    new StreamingResponseHandler<AiMessage>() {
+                        @Override
+                        public void onNext(String token) {
+                            streamHandler.onNext(token);
+                        }
+
+                        @Override
+                        public void onComplete(Response<AiMessage> response) {
+                            streamHandler.onComplete();
+                        }
+
+                        @Override
+                        public void onError(Throwable error) {
+                            log.warn("LangChain4j streaming answer generation failed: {}", error.getMessage(), error);
+                            streamHandler.onError(new BusinessException(
+                                    ResultCodeEnum.SYSTEM_BUSY,
+                                    "AI answer generation timed out or failed, please retry later"));
+                        }
+                    });
+        } catch (BusinessException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            log.warn("LangChain4j streaming answer generation failed: {}", exception.getMessage(), exception);
+            throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY,
+                    "AI answer generation timed out or failed, please retry later");
+        }
     }
 
     private String buildStudyAnalysisPrompt(AiStudyContentRequest request) {
