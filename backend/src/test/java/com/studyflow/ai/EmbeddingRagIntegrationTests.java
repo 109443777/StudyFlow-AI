@@ -2,6 +2,7 @@ package com.studyflow.ai;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -245,6 +246,61 @@ class EmbeddingRagIntegrationTests {
                 .andExpect(jsonPath("$.data[0].role").value("USER"))
                 .andExpect(jsonPath("$.data[1].role").value("ASSISTANT"))
                 .andExpect(jsonPath("$.data[1].referenceChunks.length()").value(org.hamcrest.Matchers.greaterThanOrEqualTo(1)));
+    }
+
+    @Test
+    void shouldDeleteQaSessionWithMessagesAndMaterialBindings() throws Exception {
+        Material firstMaterial = createMaterial("compiler-notes.pdf", "Compiler",
+                "Compiler notes cover lexical analysis and syntax parsing.");
+        Material secondMaterial = createMaterial("os-notes.pdf", "Operating System",
+                "Operating system notes cover process scheduling and memory management.");
+        buildEmbeddingIndex(firstMaterial);
+        buildEmbeddingIndex(secondMaterial);
+
+        mockMvc.perform(post("/api/qa/sessions")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "materialIds": [%d, %d],
+                                  "sessionName": "Delete Me"
+                                }
+                                """.formatted(firstMaterial.getId(), secondMaterial.getId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        QaSession qaSession = qaSessionMapper.selectOne(Wrappers.<QaSession>lambdaQuery()
+                .eq(QaSession::getUserId, userId)
+                .eq(QaSession::getSessionName, "Delete Me")
+                .last("limit 1"));
+        Assertions.assertNotNull(qaSession);
+
+        mockMvc.perform(post("/api/qa/sessions/{sessionId}/ask", qaSession.getId())
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "question": "Summarize operating system scheduling.",
+                                  "topK": 2
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        mockMvc.perform(delete("/api/qa/sessions/{sessionId}", qaSession.getId())
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        Assertions.assertNull(qaSessionMapper.selectById(qaSession.getId()));
+        Assertions.assertEquals(0L, jdbcTemplate.queryForObject(
+                "select count(1) from qa_message where session_id = ?",
+                Long.class,
+                qaSession.getId()));
+        Assertions.assertEquals(0L, jdbcTemplate.queryForObject(
+                "select count(1) from qa_session_material where session_id = ?",
+                Long.class,
+                qaSession.getId()));
     }
 
     private Material createMaterial() {

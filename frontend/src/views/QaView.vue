@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 import { studyflowApi } from '@/api/studyflow'
 import StatusBadge from '@/components/StatusBadge.vue'
 import type { MaterialVO, QaMessageVO, QaSessionVO } from '@/types/api'
+import { buildQaAnswerLoadingSteps } from '@/utils/materialStatus'
 import { getDisplayError } from '@/utils/result'
 
 const route = useRoute()
@@ -16,11 +17,16 @@ const selectedMaterialIds = ref<string[]>([])
 const messages = ref<QaMessageVO[]>([])
 const currentQuestion = ref('')
 const sessionName = ref('')
-const topK = ref(4)
+const topK = ref(3)
 const loading = ref(false)
 const asking = ref(false)
 const savingScope = ref(false)
 const creatingSession = ref(false)
+const deletingSessionId = ref('')
+const loadingStepIndex = ref(0)
+let loadingStepTimer: number | undefined
+
+const answerLoadingSteps = buildQaAnswerLoadingSteps()
 
 const availableMaterials = computed(() =>
   materials.value.filter(isMaterialReady),
@@ -124,6 +130,7 @@ async function ask() {
     return
   }
   asking.value = true
+  startAnswerLoading()
   const question = currentQuestion.value.trim()
   currentQuestion.value = ''
   messages.value.push({
@@ -145,7 +152,35 @@ async function ask() {
   } catch (err) {
     ElMessage.error(getDisplayError(err))
   } finally {
+    stopAnswerLoading()
     asking.value = false
+  }
+}
+
+async function deleteSession(session: QaSessionVO, event?: MouseEvent) {
+  event?.stopPropagation()
+  await ElMessageBox.confirm(`确定删除会话「${session.sessionName}」吗？会同时清空这段对话历史。`, '删除对话', {
+    type: 'warning',
+    confirmButtonText: '删除',
+    cancelButtonText: '取消',
+  })
+  deletingSessionId.value = session.id
+  try {
+    await studyflowApi.deleteQaSession(session.id)
+    sessions.value = sessions.value.filter((item) => item.id !== session.id)
+    if (activeSession.value?.id === session.id) {
+      const nextSession = sessions.value[0]
+      if (nextSession) {
+        await activateSession(nextSession)
+      } else {
+        startNewSession()
+      }
+    }
+    ElMessage.success('会话已删除')
+  } catch (err) {
+    ElMessage.error(getDisplayError(err))
+  } finally {
+    deletingSessionId.value = ''
   }
 }
 
@@ -185,7 +220,23 @@ function ensureReadyMaterialSelection() {
   return true
 }
 
+function startAnswerLoading() {
+  loadingStepIndex.value = 0
+  window.clearTimeout(loadingStepTimer)
+  loadingStepTimer = window.setTimeout(() => {
+    if (asking.value) {
+      loadingStepIndex.value = 1
+    }
+  }, 900)
+}
+
+function stopAnswerLoading() {
+  window.clearTimeout(loadingStepTimer)
+  loadingStepIndex.value = 0
+}
+
 onMounted(loadWorkspace)
+onUnmounted(stopAnswerLoading)
 </script>
 
 <template>
@@ -197,17 +248,26 @@ onMounted(loadWorkspace)
           <el-button type="primary" link @click="startNewSession">新建</el-button>
         </div>
         <div class="session-list">
-          <button
+          <div
             v-for="item in sessions"
             :key="item.id"
             class="session-item"
             :class="{ active: activeSession?.id === item.id }"
-            type="button"
             @click="activateSession(item)"
           >
-            <strong>{{ item.sessionName }}</strong>
-            <span>{{ item.materials?.length || item.materialIds?.length || 1 }} 份资料</span>
-          </button>
+            <div class="session-main">
+              <strong>{{ item.sessionName }}</strong>
+              <span>{{ item.materials?.length || item.materialIds?.length || 1 }} 份资料</span>
+            </div>
+            <el-button
+              type="danger"
+              link
+              :loading="deletingSessionId === item.id"
+              @click="deleteSession(item, $event)"
+            >
+              删除
+            </el-button>
+          </div>
           <el-empty v-if="sessions.length === 0" description="暂无对话，选择资料后提问即可创建" />
         </div>
       </div>
@@ -287,6 +347,16 @@ onMounted(loadWorkspace)
         </article>
       </div>
 
+      <el-alert
+        v-if="asking"
+        :title="answerLoadingSteps[loadingStepIndex]"
+        :description="loadingStepIndex === 0 ? '先从当前会话绑定的资料中召回最相关片段。' : '已拿到参考片段，正在组织上下文并请求大模型。'"
+        type="info"
+        :closable="false"
+        show-icon
+        class="asking-alert"
+      />
+
       <div class="ask-box">
         <el-input
           v-model="currentQuestion"
@@ -340,15 +410,21 @@ onMounted(loadWorkspace)
 }
 
 .session-item {
-  width: 100%;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
   padding: 14px 16px;
   border: 1px solid var(--sf-border);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.72);
   color: var(--sf-ink);
-  text-align: left;
   cursor: pointer;
   transition: all 0.18s ease;
+}
+
+.session-main {
+  min-width: 0;
 }
 
 .session-item strong,
@@ -427,6 +503,10 @@ onMounted(loadWorkspace)
   max-height: 58vh;
   overflow: auto;
   padding: 12px 4px;
+}
+
+.asking-alert {
+  margin-top: 8px;
 }
 
 .message {

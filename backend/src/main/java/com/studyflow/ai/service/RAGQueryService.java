@@ -19,6 +19,8 @@ public interface RAGQueryService {
 
     QaSession updateSessionMaterials(Long userId, Long sessionId, UpdateQaSessionMaterialsDTO updateQaSessionMaterialsDTO);
 
+    void deleteSession(Long userId, Long sessionId);
+
     QaAnswerResult ask(Long userId, Long sessionId, AskQuestionDTO askQuestionDTO);
 
     List<QaMessage> listHistory(Long userId, Long sessionId);

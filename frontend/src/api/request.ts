@@ -45,6 +45,10 @@ export const request = {
     const response = await http.put<Result<T>>(url, data, config)
     return unwrapResult(response.data)
   },
+  async delete<T>(url: string, config?: AxiosRequestConfig) {
+    const response = await http.delete<Result<T>>(url, config)
+    return unwrapResult(response.data)
+  },
 }
 
 export function setAuthToken(token: string | null) {

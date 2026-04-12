@@ -49,6 +49,8 @@ export const studyflowApi = {
     request.post<QaSessionVO>('/api/qa/sessions', { materialIds, sessionName }),
   updateQaSessionMaterials: (sessionId: string, materialIds: string[]) =>
     request.put<QaSessionVO>(`/api/qa/sessions/${sessionId}/materials`, { materialIds }),
+  deleteQaSession: (sessionId: string) =>
+    request.delete<void>(`/api/qa/sessions/${sessionId}`),
   askQuestion: (sessionId: string, data: AskQuestionRequest) => request.post<QaAnswerVO>(`/api/qa/sessions/${sessionId}/ask`, data),
   listQaMessages: (sessionId: string) => request.get<QaMessageVO[]>(`/api/qa/sessions/${sessionId}/messages`),
   generateReviewOutline: (data: GenerateReviewOutlineRequest) => request.post<StudyPlanDetailVO>('/api/study-plans/review-outline', data),

@@ -9,6 +9,7 @@ import { studyflowApi } from '@/api/studyflow'
 import LoadingBlock from '@/components/LoadingBlock.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import type { MaterialVO, ParseTaskVO } from '@/types/api'
+import { buildMaterialStage } from '@/utils/materialStatus'
 import { getDisplayError } from '@/utils/result'
 
 const router = useRouter()
@@ -74,6 +75,10 @@ function latestTask(materialId: string) {
   return tasksByMaterial.value[materialId]?.[0]
 }
 
+function stageOf(material: MaterialVO) {
+  return buildMaterialStage(material, tasksByMaterial.value[material.id] || [])
+}
+
 onMounted(loadMaterials)
 </script>
 
@@ -118,6 +123,14 @@ onMounted(loadMaterials)
         </el-table-column>
         <el-table-column label="解析状态" width="130">
           <template #default="{ row }"><StatusBadge :status="row.parseStatus" /></template>
+        </el-table-column>
+        <el-table-column label="当前进度" min-width="260">
+          <template #default="{ row }">
+            <div class="stage-cell">
+              <strong>{{ stageOf(row).label }}</strong>
+              <span class="muted small">{{ stageOf(row).detail }}</span>
+            </div>
+          </template>
         </el-table-column>
         <el-table-column label="最新任务" min-width="170">
           <template #default="{ row }">
@@ -165,5 +178,11 @@ onMounted(loadMaterials)
   margin-left: 8px;
   color: var(--sf-muted);
   font-size: 12px;
+}
+
+.stage-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 </style>

@@ -34,6 +34,11 @@ public class RedisQaSessionContextCache implements QaSessionContextCache {
         }
     }
 
+    @Override
+    public void evict(Long sessionId) {
+        stringRedisTemplate.delete(buildKey(sessionId));
+    }
+
     private String buildKey(Long sessionId) {
         return KEY_PREFIX + sessionId + ":history";
     }

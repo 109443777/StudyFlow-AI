@@ -7,6 +7,7 @@ import { studyflowApi } from '@/api/studyflow'
 import LoadingBlock from '@/components/LoadingBlock.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import type { MaterialContentVO, MaterialSummaryVO, MaterialVO, ParseTaskVO } from '@/types/api'
+import { buildMaterialStage } from '@/utils/materialStatus'
 import { getDisplayError } from '@/utils/result'
 
 const route = useRoute()
@@ -22,6 +23,7 @@ const actionLoading = ref(false)
 const error = ref('')
 
 const latestStatus = computed(() => tasks.value[0]?.status || material.value?.parseStatus)
+const materialStage = computed(() => material.value ? buildMaterialStage(material.value, tasks.value) : undefined)
 
 async function safeLoad<T>(loader: () => Promise<T>, assign: (value: T) => void) {
   try {
@@ -93,6 +95,16 @@ onMounted(loadDetail)
         </div>
       </div>
 
+      <el-alert
+        v-if="materialStage"
+        :title="materialStage.label"
+        :description="materialStage.detail"
+        :type="materialStage.tone"
+        :closable="false"
+        show-icon
+        class="stage-alert"
+      />
+
       <el-descriptions :column="2" border>
         <el-descriptions-item label="资料 ID">{{ material.id }}</el-descriptions-item>
         <el-descriptions-item label="资料类型">{{ material.materialType }}</el-descriptions-item>
@@ -161,6 +173,10 @@ onMounted(loadDetail)
 
 .detail-tabs {
   margin-top: 22px;
+}
+
+.stage-alert {
+  margin-top: 18px;
 }
 
 .content-box {

@@ -32,4 +32,9 @@ public class InMemoryQaSessionContextCache implements QaSessionContextCache {
             }
         }
     }
+
+    @Override
+    public void evict(Long sessionId) {
+        cache.remove(sessionId);
+    }
 }

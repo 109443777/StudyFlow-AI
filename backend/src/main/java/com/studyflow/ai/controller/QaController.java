@@ -34,6 +34,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -77,6 +78,15 @@ public class QaController {
         Long userId = UserContext.getRequiredUserId();
         QaSession qaSession = ragQueryService.updateSessionMaterials(userId, sessionId, updateQaSessionMaterialsDTO);
         return Result.success(toQaSessionVO(userId, qaSession));
+    }
+
+    @LoginRequired
+    @Operation(summary = "Delete QA session")
+    @DeleteMapping("/sessions/{sessionId}")
+    public Result<Void> deleteSession(@PathVariable Long sessionId) {
+        Long userId = UserContext.getRequiredUserId();
+        ragQueryService.deleteSession(userId, sessionId);
+        return Result.success(null);
     }
 
     @LoginRequired

@@ -117,6 +117,22 @@ public class RAGQueryServiceImpl implements RAGQueryService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public void deleteSession(Long userId, Long sessionId) {
+        getOwnedSession(userId, sessionId);
+        qaMessageMapper.delete(new LambdaQueryWrapper<QaMessage>()
+                .eq(QaMessage::getSessionId, sessionId)
+                .eq(QaMessage::getUserId, userId));
+        qaSessionMaterialMapper.delete(new LambdaQueryWrapper<QaSessionMaterial>()
+                .eq(QaSessionMaterial::getSessionId, sessionId)
+                .eq(QaSessionMaterial::getUserId, userId));
+        qaSessionMapper.delete(new LambdaQueryWrapper<QaSession>()
+                .eq(QaSession::getId, sessionId)
+                .eq(QaSession::getUserId, userId));
+        qaSessionContextCache.evict(sessionId);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public QaAnswerResult ask(Long userId, Long sessionId, AskQuestionDTO askQuestionDTO) {
         QaSession qaSession = getOwnedSession(userId, sessionId);
         List<Long> materialIds = listSessionMaterialIds(userId, qaSession.getId());
@@ -143,7 +159,9 @@ public class RAGQueryServiceImpl implements RAGQueryService {
                         .build())
                 .toList();
         List<String> contexts = references.stream()
-                .map(item -> "File " + item.getFileName() + ", Chunk " + item.getChunkIndex() + ": " + item.getChunkText())
+                .limit(3)
+                .map(item -> "File " + item.getFileName() + ", Chunk " + item.getChunkIndex() + ": "
+                        + trimContext(item.getChunkText()))
                 .toList();
         String prompt = ragPromptBuilder.build(
                 primaryMaterial,
@@ -279,5 +297,13 @@ public class RAGQueryServiceImpl implements RAGQueryService {
         } catch (JsonProcessingException exception) {
             throw new BusinessException(ResultCodeEnum.INTERNAL_ERROR, "failed to write qa references");
         }
+    }
+
+    private String trimContext(String text) {
+        if (!StringUtils.hasText(text)) {
+            return "";
+        }
+        String normalized = text.replaceAll("\\s+", " ").trim();
+        return normalized.length() <= 600 ? normalized : normalized.substring(0, 600) + "...";
     }
 }
