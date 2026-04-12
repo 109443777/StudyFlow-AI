@@ -78,26 +78,31 @@ Notes:
 
 ## Vector Store Setup
 
-RAG retrieval defaults to `database`, which stores embedding JSON in MySQL and is convenient for local smoke tests.
+RAG retrieval now defaults to `milvus` for the real vector-search path. MySQL still stores `material_chunk.embedding_vector` as an observability and degraded-search fallback.
 
-To use the real Milvus provider, start Docker Compose and update `config/application-local.yml`:
+Recommended local config:
 
 ```yaml
 studyflow:
   vector-store:
     provider: milvus
+    fallback-to-database: true
     milvus:
       uri: http://localhost:19530
       token:
       collection-name: studyflow_material_chunks
       dimension: 1024
       metric-type: COSINE
+      batch-size: 64
 ```
 
 Notes:
 - Milvus uses its own internal MinIO service in Docker Compose. This is separate from the StudyFlow file-storage MinIO used for uploaded documents, audio, and video.
 - `dimension` must match the embedding model output dimension. If you change the embedding model, update `studyflow.vector-store.milvus.dimension` at the same time.
+- `fallback-to-database: true` lets RAG search fall back to MySQL cosine retrieval if Milvus is temporarily unavailable.
+- `batch-size` controls how many chunk vectors are upserted to Milvus in one request, which avoids oversized writes for long PDFs and video transcripts.
 - The current Milvus collection stores `chunk_id`, `material_id`, `chunk_index`, `chunk_text`, and `embedding`, while MySQL keeps the original chunk metadata for fallback and debugging.
+- Docker Compose uses Milvus standalone for local development. Real production high availability should use Milvus cluster or a managed vector database with replicated etcd/object storage.
 
 ## Media Transcription Setup
 
@@ -173,7 +178,7 @@ PowerShell:
 
 ## Static Test Console
 
-Before using the static test console, make sure `docker compose up -d` has started the required Docker services (`MySQL`, `Redis`, `RabbitMQ`, and `MinIO`), and that the backend service is running.
+Before using the static test console, make sure `docker compose up -d` has started the required Docker services (`MySQL`, `Redis`, `RabbitMQ`, `MinIO`, and `Milvus`), and that the backend service is running.
 
 Open the console at:
 
