@@ -7,7 +7,11 @@ import com.studyflow.ai.common.exception.BusinessException;
 import com.studyflow.ai.enums.ResultCodeEnum;
 import com.studyflow.ai.service.ai.ChapterHighlight;
 import com.studyflow.ai.service.ai.StudyContentAnalysisResult;
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.SystemMessage;
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.output.Response;
 import java.util.List;
 import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
@@ -43,7 +47,10 @@ public class LangChain4jAiGateway implements AiGateway {
 
     @Override
     public String answer(String question, List<String> contexts) {
-        String answer = chatLanguageModel.generate(buildRagAnswerPrompt(question, contexts));
+        Response<AiMessage> response = chatLanguageModel.generate(List.of(
+                SystemMessage.from(buildRagSystemPrompt()),
+                UserMessage.from(buildRagUserPrompt(question, contexts))));
+        String answer = response == null || response.content() == null ? null : response.content().text();
         if (!StringUtils.hasText(answer)) {
             throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY,
                     "langchain4j ai returned an empty answer");
@@ -80,7 +87,19 @@ public class LangChain4jAiGateway implements AiGateway {
                 """.formatted(request.getPrompt());
     }
 
-    private String buildRagAnswerPrompt(String question, List<String> contexts) {
+    private String buildRagSystemPrompt() {
+        return """
+                You are StudyFlow AI, a learning assistant for university students.
+                Your job is to teach the student clearly, using only the retrieved study material.
+                Prefer explaining the topic in a study-friendly way instead of giving a retrieval audit report.
+                Focus on the document's core ideas, definitions, methods, conclusions, and revision value.
+                Ignore references, copyright notices, page headers, page footers, repeated fragments, and noisy extraction artifacts unless the student explicitly asks about them.
+                If some context is noisy or incomplete, still answer from the useful parts first, then briefly state what remains uncertain.
+                Do not invent facts outside the retrieved material.
+                """;
+    }
+
+    private String buildRagUserPrompt(String question, List<String> contexts) {
         List<String> safeContexts = contexts == null ? List.of() : contexts.stream()
                 .filter(StringUtils::hasText)
                 .map(String::trim)
@@ -90,16 +109,18 @@ public class LangChain4jAiGateway implements AiGateway {
                 : String.join("\n", safeContexts);
         String safeQuestion = question == null ? "" : question.trim();
         return """
-                You are StudyFlow AI, a learning assistant for university students.
-                Answer the student's question strictly based on the retrieved study material.
-                If the material is insufficient, say that clearly instead of inventing facts.
-                Keep the answer concise, accurate, and useful for course revision.
-
-                Retrieved study material:
+                Study material excerpts:
                 %s
 
-                Student question and recent conversation context:
+                Student request:
                 %s
+
+                Answer requirements:
+                1. Start with the most likely useful explanation or summary from the valid material content.
+                2. When the question asks for key points, summarize them in a student-friendly way.
+                3. If the retrieved content is partially noisy, ignore the noisy parts and use the meaningful parts.
+                4. Only mention insufficiency after you have extracted whatever can be confirmed from the material.
+                5. If the excerpts mainly contain references or repeated fragments, say that briefly and avoid over-explaining the failure.
                 """.formatted(contextBlock, safeQuestion);
     }
 

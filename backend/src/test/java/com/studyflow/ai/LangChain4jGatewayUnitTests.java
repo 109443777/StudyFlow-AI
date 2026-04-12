@@ -7,6 +7,7 @@ import com.studyflow.ai.gateway.LangChain4jAiGateway;
 import com.studyflow.ai.gateway.LangChain4jEmbeddingGateway;
 import com.studyflow.ai.service.ai.StudyContentAnalysisResult;
 import dev.langchain4j.data.embedding.Embedding;
+import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.chat.ChatLanguageModel;
@@ -83,6 +84,28 @@ class LangChain4jGatewayUnitTests {
         assertThat(documentEmbeddings.get(10)).containsExactly(1.0D, 0.5D);
     }
 
+    @Test
+    void shouldBuildLearningFocusedRagPromptWithNoiseFilteringGuidance() {
+        PromptEchoChatLanguageModel chatLanguageModel = new PromptEchoChatLanguageModel();
+        LangChain4jAiGateway gateway = new LangChain4jAiGateway(chatLanguageModel);
+
+        String answer = gateway.answer(
+                """
+                You are StudyFlow AI, a learning assistant for university students.
+                Material name: knowledge-graph.pdf
+                Student question: 请总结这篇资料的核心贡献
+                """,
+                List.of(
+                        "Chunk 1: 这里是正文内容，讨论多智能体知识图谱构建框架。",
+                        "Chunk 2: Authorized licensed use limited to: SHENZHEN UNIVERSITY."));
+
+        assertThat(answer).contains("teach the student clearly");
+        assertThat(answer).contains("Ignore references, copyright notices, page headers, page footers");
+        assertThat(answer).contains("If some context is noisy or incomplete, still answer from the useful parts first");
+        assertThat(answer).contains("核心贡献");
+        assertThat(answer).contains("Authorized licensed use limited to: SHENZHEN UNIVERSITY.");
+    }
+
     private static class FakeEmbeddingModel implements EmbeddingModel {
 
         @Override
@@ -114,6 +137,14 @@ class LangChain4jGatewayUnitTests {
 
         public List<Integer> getBatchSizes() {
             return batchSizes;
+        }
+    }
+
+    private static class PromptEchoChatLanguageModel implements ChatLanguageModel {
+
+        @Override
+        public Response<AiMessage> generate(List<ChatMessage> messages) {
+            return Response.from(AiMessage.from(messages.toString()));
         }
     }
 }
