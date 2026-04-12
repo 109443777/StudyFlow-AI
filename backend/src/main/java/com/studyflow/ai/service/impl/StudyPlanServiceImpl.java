@@ -53,7 +53,8 @@ public class StudyPlanServiceImpl implements StudyPlanService {
         MaterialSummary materialSummary = getMaterialSummary(material.getId());
 
         List<String> keyPoints = limitList(studyContentAiService.readStringList(materialSummary.getKeyPoints()), 8);
-        List<ChapterHighlight> chapterHighlights = studyContentAiService.readChapterHighlights(materialSummary.getChapterHighlights());
+        List<ChapterHighlight> chapterHighlights =
+                studyContentAiService.readChapterHighlights(materialSummary.getChapterHighlights());
         List<String> reviewChecklist = studyContentAiService.readStringList(materialSummary.getReviewOutline());
         ExamStudyPlanContent examStudyPlanContent = ExamStudyPlanContent.builder()
                 .examDate(generateStudyPlanDTO.getExamDate())

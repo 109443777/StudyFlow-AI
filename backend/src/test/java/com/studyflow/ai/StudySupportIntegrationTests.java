@@ -95,8 +95,12 @@ class StudySupportIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.planType").value("REVIEW_OUTLINE"))
+                .andExpect(jsonPath("$.data.planName").value("database-systems.pdf - 复习提纲"))
                 .andExpect(jsonPath("$.data.reviewOutline.summary").isNotEmpty())
-                .andExpect(jsonPath("$.data.reviewOutline.keyPoints.length()").value(org.hamcrest.Matchers.greaterThanOrEqualTo(1)));
+                .andExpect(jsonPath("$.data.reviewOutline.reviewChecklist[0]")
+                        .value("先串联关系模型、范式、事务、索引之间的逻辑关系。"))
+                .andExpect(jsonPath("$.data.reviewOutline.keyPoints.length()")
+                        .value(org.hamcrest.Matchers.greaterThanOrEqualTo(1)));
 
         mockMvc.perform(post("/api/study-plans/exam-plan")
                         .header("Authorization", "Bearer " + token)
@@ -110,8 +114,11 @@ class StudySupportIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.planType").value("EXAM_PLAN"))
+                .andExpect(jsonPath("$.data.planName").value("database-systems.pdf - 7天复习计划"))
                 .andExpect(jsonPath("$.data.examPlan.dailyPlans.length()").value(7))
-                .andExpect(jsonPath("$.data.examPlan.finalTips.length()").value(org.hamcrest.Matchers.greaterThanOrEqualTo(1)));
+                .andExpect(jsonPath("$.data.examPlan.dailyPlans[0].theme").value("搭建知识框架"))
+                .andExpect(jsonPath("$.data.examPlan.finalTips.length()")
+                        .value(org.hamcrest.Matchers.greaterThanOrEqualTo(1)));
 
         StudyPlan examPlan = studyPlanMapper.selectOne(Wrappers.<StudyPlan>lambdaQuery()
                 .eq(StudyPlan::getUserId, userId)
@@ -123,7 +130,7 @@ class StudySupportIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.id").value(examPlan.getId()))
-                .andExpect(jsonPath("$.data.examPlan.dailyPlans[0].theme").isNotEmpty());
+                .andExpect(jsonPath("$.data.examPlan.dailyPlans[0].theme").value("搭建知识框架"));
 
         mockMvc.perform(get("/api/study-plans")
                         .header("Authorization", "Bearer " + token))
@@ -151,7 +158,11 @@ class StudySupportIntegrationTests {
         MaterialSummary materialSummary = new MaterialSummary();
         materialSummary.setMaterialId(material.getId());
         materialSummary.setSummaryText("This material focuses on relational models, normalization, transactions, and indexing.");
-        materialSummary.setKeywords(OBJECT_MAPPER.writeValueAsString(List.of("relational model", "normalization", "transaction", "index")));
+        materialSummary.setKeywords(OBJECT_MAPPER.writeValueAsString(List.of(
+                "relational model",
+                "normalization",
+                "transaction",
+                "index")));
         materialSummary.setKeyPoints(OBJECT_MAPPER.writeValueAsString(List.of(
                 "Understand the structure of the relational model.",
                 "Explain why normalization reduces redundancy.",

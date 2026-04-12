@@ -91,7 +91,8 @@ public class ReviewOutlineServiceImpl implements ReviewOutlineService {
         }
         if (!MaterialParseStatusEnum.SUCCESS.name().equals(material.getParseStatus())
                 && !MaterialParseStatusEnum.PARSING.name().equals(material.getParseStatus())) {
-            throw new BusinessException(ResultCodeEnum.MATERIAL_SUMMARY_NOT_FOUND, "material is not ready for review outline generation");
+            throw new BusinessException(ResultCodeEnum.MATERIAL_SUMMARY_NOT_FOUND,
+                    "material is not ready for review outline generation");
         }
         return material;
     }
