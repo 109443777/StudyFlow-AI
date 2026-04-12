@@ -12,9 +12,11 @@ import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Locale;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
@@ -32,7 +34,9 @@ public class DashScopeTemporaryFileUploader {
     private final HttpClient httpClient;
 
     public DashScopeTemporaryFileUploader(TranscriptionProperties transcriptionProperties) {
-        this(transcriptionProperties, HttpClient.newHttpClient());
+        this(transcriptionProperties, HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(transcriptionProperties.getExternal().getRequestTimeoutSeconds()))
+                .build());
     }
 
     DashScopeTemporaryFileUploader(TranscriptionProperties transcriptionProperties, HttpClient httpClient) {
@@ -51,9 +55,13 @@ public class DashScopeTemporaryFileUploader {
             String objectKey = uploadPolicy.uploadDir() + "/" + fileName;
             String boundary = "----StudyFlowBoundary" + UUID.randomUUID();
             multipartFile = buildMultipartFile(filePath, uploadPolicy, objectKey, boundary);
+            long fileSize = Files.size(filePath);
+            log.info("Start uploading temporary audio to DashScope, filePath={}, fileSize={}, objectKey={}",
+                    filePath, fileSize, objectKey);
             HttpRequest uploadRequest = HttpRequest.newBuilder()
                     .uri(URI.create(uploadPolicy.uploadHost()))
                     .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                    .timeout(Duration.ofSeconds(transcriptionProperties.getExternal().getUploadTimeoutSeconds()))
                     .POST(HttpRequest.BodyPublishers.ofFile(multipartFile))
                     .build();
             HttpResponse<String> uploadResponse = httpClient.send(uploadRequest, HttpResponse.BodyHandlers.ofString());
@@ -61,7 +69,10 @@ public class DashScopeTemporaryFileUploader {
                 throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, buildHttpFailureMessage(
                         "dashscope temporary file upload failed", uploadResponse.statusCode(), uploadResponse.body()));
             }
+            log.info("Completed temporary audio upload to DashScope, filePath={}, objectKey={}", filePath, objectKey);
             return OSS_PROTOCOL_PREFIX + objectKey;
+        } catch (HttpTimeoutException exception) {
+            throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "dashscope temporary file upload timed out");
         } catch (IOException exception) {
             throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "dashscope temporary file upload failed");
         } catch (InterruptedException exception) {
@@ -81,6 +92,7 @@ public class DashScopeTemporaryFileUploader {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(endpoint))
                 .header("Authorization", "Bearer " + transcriptionProperties.getExternal().getApiKey())
+                .timeout(Duration.ofSeconds(transcriptionProperties.getExternal().getRequestTimeoutSeconds()))
                 .GET()
                 .build();
         JsonNode data = sendForJson(request).path("data");

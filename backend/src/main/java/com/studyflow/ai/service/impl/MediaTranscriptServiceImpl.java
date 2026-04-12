@@ -30,6 +30,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Locale;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -74,13 +75,20 @@ public class MediaTranscriptServiceImpl implements MediaTranscriptService {
                 AudioExtractionResult extractionResult = mediaAudioExtractService.extractToWav(originalMediaPath,
                         material.getId());
                 audioPath = extractionResult.getAudioFilePath();
-                extractedAudioObjectKey = "transcripts/" + material.getId() + "/extracted-audio.wav";
+                extractedAudioObjectKey = "transcripts/" + material.getId() + "/extracted-audio."
+                        + resolveFileType(audioPath, "mp3");
                 try (InputStream inputStream = Files.newInputStream(audioPath)) {
-                    storageGateway.upload(extractedAudioObjectKey, inputStream, Files.size(audioPath), "audio/wav");
+                    storageGateway.upload(
+                            extractedAudioObjectKey,
+                            inputStream,
+                            Files.size(audioPath),
+                            resolveContentType(audioPath));
                 }
                 fileUrl = storageGateway.getFileUrl(extractedAudioObjectKey);
             }
-            byte[] content = Files.readAllBytes(audioPath);
+            byte[] content = shouldLoadMediaBytes()
+                    ? Files.readAllBytes(audioPath)
+                    : new byte[0];
             MediaTranscriptionResult result = mediaTranscriptionGateway.transcribe(MediaTranscriptionRequest.builder()
                     .materialId(material.getId())
                     .fileName(audioPath.getFileName().toString())
@@ -185,6 +193,21 @@ public class MediaTranscriptServiceImpl implements MediaTranscriptService {
             return fileName.substring(dotIndex + 1).toLowerCase();
         }
         return fallbackType;
+    }
+
+    private String resolveContentType(Path filePath) {
+        String fileType = resolveFileType(filePath, "mp3").toLowerCase(Locale.ROOT);
+        if ("mp3".equals(fileType)) {
+            return "audio/mpeg";
+        }
+        if ("wav".equals(fileType)) {
+            return "audio/wav";
+        }
+        return "application/octet-stream";
+    }
+
+    private boolean shouldLoadMediaBytes() {
+        return "mock".equalsIgnoreCase(transcriptionProperties.getProvider());
     }
 
     private void deleteTempFile(Path filePath) {

@@ -28,6 +28,10 @@ public class TranscriptionProperties {
 
         private String model;
 
+        private long requestTimeoutSeconds = 60;
+
+        private long uploadTimeoutSeconds = 120;
+
         private long pollIntervalMillis = 1000;
 
         private int maxPollAttempts = 60;

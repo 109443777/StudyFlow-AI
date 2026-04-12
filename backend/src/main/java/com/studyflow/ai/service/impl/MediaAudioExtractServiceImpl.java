@@ -26,15 +26,21 @@ public class MediaAudioExtractServiceImpl implements MediaAudioExtractService {
         if (!Files.exists(videoPath)) {
             throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "video file does not exist for audio extraction");
         }
-        Path audioPath = ensureTempDir().resolve("material-" + materialId + "-extract.wav");
+        Path audioPath = ensureTempDir().resolve("material-" + materialId + "-extract.mp3");
         List<String> command = List.of(
                 transcriptionProperties.getFfmpegPath(),
                 "-y",
                 "-i",
                 videoPath.toString(),
                 "-vn",
-                "-acodec",
-                "pcm_s16le",
+                "-ac",
+                "1",
+                "-ar",
+                "16000",
+                "-codec:a",
+                "libmp3lame",
+                "-b:a",
+                "64k",
                 audioPath.toString());
         Process process = null;
         try {

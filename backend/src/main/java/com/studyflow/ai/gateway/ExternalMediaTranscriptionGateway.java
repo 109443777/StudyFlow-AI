@@ -12,8 +12,10 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -27,12 +29,15 @@ public class ExternalMediaTranscriptionGateway implements MediaTranscriptionGate
 
     private final TranscriptionProperties transcriptionProperties;
 
-    private final HttpClient httpClient = HttpClient.newHttpClient();
+    private final HttpClient httpClient;
 
     private final DashScopeTemporaryFileUploader temporaryFileUploader;
 
     public ExternalMediaTranscriptionGateway(TranscriptionProperties transcriptionProperties) {
         this.transcriptionProperties = transcriptionProperties;
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(transcriptionProperties.getExternal().getRequestTimeoutSeconds()))
+                .build();
         this.temporaryFileUploader = new DashScopeTemporaryFileUploader(transcriptionProperties);
     }
 
@@ -49,6 +54,8 @@ public class ExternalMediaTranscriptionGateway implements MediaTranscriptionGate
             String taskId = submitTask(inputUrl);
             String transcriptionUrl = waitForTranscriptionUrl(taskId);
             return readTranscriptionResult(transcriptionUrl);
+        } catch (HttpTimeoutException exception) {
+            throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "external transcription request timed out");
         } catch (IOException exception) {
             throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "external transcription request failed");
         } catch (InterruptedException exception) {
@@ -86,8 +93,7 @@ public class ExternalMediaTranscriptionGateway implements MediaTranscriptionGate
         String body = OBJECT_MAPPER.writeValueAsString(Map.of(
                 "model", transcriptionProperties.getExternal().getModel(),
                 "input", Map.of("file_urls", List.of(fileUrl))));
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(endpoint("/services/audio/asr/transcription")))
+        HttpRequest request = requestBuilder(endpoint("/services/audio/asr/transcription"))
                 .header("Authorization", "Bearer " + transcriptionProperties.getExternal().getApiKey())
                 .header("Content-Type", "application/json")
                 .header("X-DashScope-Async", "enable")
@@ -104,8 +110,7 @@ public class ExternalMediaTranscriptionGateway implements MediaTranscriptionGate
 
     private String waitForTranscriptionUrl(String taskId) throws IOException, InterruptedException {
         for (int attempt = 0; attempt < transcriptionProperties.getExternal().getMaxPollAttempts(); attempt++) {
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(endpoint("/tasks/" + taskId)))
+            HttpRequest request = requestBuilder(endpoint("/tasks/" + taskId))
                     .header("Authorization", "Bearer " + transcriptionProperties.getExternal().getApiKey())
                     .GET()
                     .build();
@@ -144,8 +149,7 @@ public class ExternalMediaTranscriptionGateway implements MediaTranscriptionGate
 
     private MediaTranscriptionResult readTranscriptionResult(String transcriptionUrl)
             throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(transcriptionUrl))
+        HttpRequest request = requestBuilder(transcriptionUrl)
                 .GET()
                 .build();
         JsonNode root = sendForJson(request);
@@ -228,5 +232,11 @@ public class ExternalMediaTranscriptionGateway implements MediaTranscriptionGate
             baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
         }
         return baseUrl + path;
+    }
+
+    private HttpRequest.Builder requestBuilder(String url) {
+        return HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .timeout(Duration.ofSeconds(transcriptionProperties.getExternal().getRequestTimeoutSeconds()));
     }
 }

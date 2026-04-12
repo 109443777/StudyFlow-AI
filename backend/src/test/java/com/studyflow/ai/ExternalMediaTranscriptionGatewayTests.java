@@ -3,10 +3,12 @@ package com.studyflow.ai;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.studyflow.ai.common.exception.BusinessException;
 import com.studyflow.ai.config.TranscriptionProperties;
 import com.studyflow.ai.enums.MediaTypeEnum;
+import com.studyflow.ai.gateway.DashScopeTemporaryFileUploader;
 import com.studyflow.ai.gateway.ExternalMediaTranscriptionGateway;
 import com.studyflow.ai.gateway.MediaTranscriptionRequest;
 import com.studyflow.ai.service.media.MediaTranscriptionResult;
@@ -17,6 +19,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
 
 class ExternalMediaTranscriptionGatewayTests {
@@ -121,6 +124,29 @@ class ExternalMediaTranscriptionGatewayTests {
                 .transcribe(MediaTranscriptionRequest.builder()
                         .mediaType(MediaTypeEnum.AUDIO)
                         .build()));
+    }
+
+    @Test
+    void shouldFailFastWhenDashScopeTemporaryUploadTimesOut() throws Exception {
+        Path audioFile = Files.createTempFile("studyflow-audio-timeout-", ".mp3");
+        Files.writeString(audioFile, "fake audio bytes", StandardCharsets.UTF_8);
+        try (SlowUploadPolicyServer server = SlowUploadPolicyServer.start()) {
+            TranscriptionProperties properties = new TranscriptionProperties();
+            properties.getExternal().setBaseUrl(server.baseUrl());
+            properties.getExternal().setApiKey("dashscope-key");
+            properties.getExternal().setModel("paraformer-v2");
+            properties.getExternal().setUploadTimeoutSeconds(1);
+
+            long start = System.nanoTime();
+            BusinessException exception = assertThrows(BusinessException.class,
+                    () -> new DashScopeTemporaryFileUploader(properties).upload(audioFile));
+            long elapsedMillis = Duration.ofNanos(System.nanoTime() - start).toMillis();
+
+            assertTrue(elapsedMillis < 1900L);
+            assertTrue(exception.getMessage().contains("timed out"));
+        } finally {
+            Files.deleteIfExists(audioFile);
+        }
     }
 
     private static TranscriptionProperties testProperties(FakeAliyunTranscriptionServer server) {
@@ -241,6 +267,58 @@ class ExternalMediaTranscriptionGatewayTests {
 
         private void writeJson(HttpExchange exchange, String body) throws IOException {
             byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        }
+    }
+
+    private static final class SlowUploadPolicyServer implements AutoCloseable {
+
+        private final HttpServer httpServer;
+
+        private SlowUploadPolicyServer(HttpServer httpServer) {
+            this.httpServer = httpServer;
+        }
+
+        static SlowUploadPolicyServer start() throws IOException {
+            HttpServer httpServer = HttpServer.create(new InetSocketAddress(0), 0);
+            SlowUploadPolicyServer server = new SlowUploadPolicyServer(httpServer);
+            httpServer.createContext("/api/v1/uploads", server::handleUploadPolicy);
+            httpServer.createContext("/oss-upload", server::handleSlowUpload);
+            httpServer.start();
+            return server;
+        }
+
+        String baseUrl() {
+            return "http://localhost:" + httpServer.getAddress().getPort() + "/api/v1";
+        }
+
+        @Override
+        public void close() {
+            httpServer.stop(0);
+        }
+
+        private void handleUploadPolicy(HttpExchange exchange) throws IOException {
+            byte[] bytes = """
+                    {"data":{"upload_host":"%s/oss-upload","upload_dir":"dashscope-instant/studyflow-test","policy":"test-policy","signature":"test-signature","oss_access_key_id":"test-access-key","x_oss_object_acl":"private","x_oss_forbid_overwrite":"false"}}
+                    """.formatted("http://localhost:" + httpServer.getAddress().getPort())
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        }
+
+        private void handleSlowUpload(HttpExchange exchange) throws IOException {
+            exchange.getRequestBody().readAllBytes();
+            try {
+                Thread.sleep(2500L);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+            byte[] bytes = "{}".getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json");
             exchange.sendResponseHeaders(200, bytes.length);
             exchange.getResponseBody().write(bytes);
