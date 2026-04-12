@@ -213,6 +213,7 @@ PowerShell：
 - Swagger UI：`http://localhost:8080/swagger-ui/index.html`
 - 健康检查接口：`http://localhost:8080/api/health`
 - 静态测试页面：`http://localhost:8080/index.html`
+- 端到端引导测试台：`http://localhost:8080/e2e.html`
 - RabbitMQ 管理台：`http://localhost:15672`
 - MinIO 控制台：`http://localhost:9001`
 
@@ -220,11 +221,18 @@ PowerShell：
 
 使用静态测试页面前，请先确认 `docker compose up -d` 已启动 `MySQL`、`Redis`、`RabbitMQ`、`MinIO` 和 `Milvus`，并且后端服务已经启动。
 
-打开：
+当前提供两个后端内置静态页面：
 
-```text
-http://localhost:8080/index.html
-```
+- `http://localhost:8080/index.html`：完整接口调试页，覆盖接口较多，适合逐个接口排查。
+- `http://localhost:8080/e2e.html`：中文端到端引导页，按“登录 -> 上传 -> 解析 -> 摘要 -> RAG 问答 -> 学习计划”的顺序测试，更适合演示主流程。
+
+如果要测试真实 AI 与真实向量检索效果，请确认：
+
+- `config/application-local.yml` 中 `studyflow.ai.provider` 已设置为 `langchain4j`
+- `config/application-local.yml` 中 `studyflow.embedding.provider` 已设置为 `langchain4j`
+- `studyflow.vector-store.provider` 使用 `milvus`
+- Docker Compose 中的 Milvus 已正常启动
+- 后端以 `local` profile 启动
 
 推荐测试顺序：
 
