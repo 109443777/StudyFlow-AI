@@ -12,10 +12,19 @@ import org.springframework.util.StringUtils;
 
 public class LangChain4jEmbeddingGateway implements EmbeddingGateway {
 
+    private static final int DEFAULT_EMBEDDING_BATCH_SIZE = 10;
+
     private final EmbeddingModel embeddingModel;
 
+    private final int embeddingBatchSize;
+
     public LangChain4jEmbeddingGateway(EmbeddingModel embeddingModel) {
+        this(embeddingModel, DEFAULT_EMBEDDING_BATCH_SIZE);
+    }
+
+    public LangChain4jEmbeddingGateway(EmbeddingModel embeddingModel, Integer embeddingBatchSize) {
         this.embeddingModel = embeddingModel;
+        this.embeddingBatchSize = Math.max(1, embeddingBatchSize == null ? DEFAULT_EMBEDDING_BATCH_SIZE : embeddingBatchSize);
     }
 
     @Override
@@ -27,14 +36,20 @@ public class LangChain4jEmbeddingGateway implements EmbeddingGateway {
                 .map(this::toSafeText)
                 .map(TextSegment::from)
                 .toList();
-        Response<List<Embedding>> response = embeddingModel.embedAll(textSegments);
-        if (response == null || response.content() == null || response.content().size() != textSegments.size()) {
-            throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY,
-                    "langchain4j embedding response is invalid");
+        List<List<Double>> vectors = new ArrayList<>(textSegments.size());
+        for (int start = 0; start < textSegments.size(); start += embeddingBatchSize) {
+            int end = Math.min(start + embeddingBatchSize, textSegments.size());
+            List<TextSegment> batch = textSegments.subList(start, end);
+            Response<List<Embedding>> response = embeddingModel.embedAll(batch);
+            if (response == null || response.content() == null || response.content().size() != batch.size()) {
+                throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY,
+                        "langchain4j embedding response is invalid");
+            }
+            response.content().stream()
+                    .map(this::toDoubleList)
+                    .forEach(vectors::add);
         }
-        return response.content().stream()
-                .map(this::toDoubleList)
-                .toList();
+        return vectors;
     }
 
     @Override

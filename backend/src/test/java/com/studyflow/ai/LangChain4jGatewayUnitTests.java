@@ -65,6 +65,24 @@ class LangChain4jGatewayUnitTests {
         assertThat(queryEmbedding).containsExactly(1.0D, 0.5D);
     }
 
+    @Test
+    void shouldSplitDocumentEmbeddingRequestsIntoProviderSafeBatches() {
+        BatchingAwareEmbeddingModel embeddingModel = new BatchingAwareEmbeddingModel();
+        LangChain4jEmbeddingGateway gateway = new LangChain4jEmbeddingGateway(embeddingModel);
+
+        List<String> texts = new ArrayList<>();
+        for (int index = 0; index < 11; index++) {
+            texts.add("chunk-" + index);
+        }
+
+        List<List<Double>> documentEmbeddings = gateway.embedDocuments(texts);
+
+        assertThat(documentEmbeddings).hasSize(11);
+        assertThat(embeddingModel.getBatchSizes()).containsExactly(10, 1);
+        assertThat(documentEmbeddings.get(0)).containsExactly(1.0D, 0.5D);
+        assertThat(documentEmbeddings.get(10)).containsExactly(1.0D, 0.5D);
+    }
+
     private static class FakeEmbeddingModel implements EmbeddingModel {
 
         @Override
@@ -74,6 +92,28 @@ class LangChain4jGatewayUnitTests {
                 embeddings.add(Embedding.from(new float[] {i + 1.0F, (i + 1.0F) / 2.0F}));
             }
             return Response.from(embeddings);
+        }
+    }
+
+    private static class BatchingAwareEmbeddingModel implements EmbeddingModel {
+
+        private final List<Integer> batchSizes = new ArrayList<>();
+
+        @Override
+        public Response<List<Embedding>> embedAll(List<TextSegment> textSegments) {
+            batchSizes.add(textSegments.size());
+            if (textSegments.size() > 10) {
+                throw new IllegalArgumentException("batch size should not be larger than 10");
+            }
+            List<Embedding> embeddings = new ArrayList<>(textSegments.size());
+            for (int i = 0; i < textSegments.size(); i++) {
+                embeddings.add(Embedding.from(new float[] {i + 1.0F, (i + 1.0F) / 2.0F}));
+            }
+            return Response.from(embeddings);
+        }
+
+        public List<Integer> getBatchSizes() {
+            return batchSizes;
         }
     }
 }

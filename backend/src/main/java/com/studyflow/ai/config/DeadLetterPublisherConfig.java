@@ -4,8 +4,7 @@ import com.studyflow.ai.mq.DeadLetterMessagePublisher;
 import com.studyflow.ai.mq.NoopDeadLetterMessagePublisher;
 import com.studyflow.ai.mq.RabbitDeadLetterMessagePublisher;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -13,14 +12,11 @@ import org.springframework.context.annotation.Configuration;
 public class DeadLetterPublisherConfig {
 
     @Bean
-    @ConditionalOnBean(RabbitTemplate.class)
-    public DeadLetterMessagePublisher rabbitDeadLetterMessagePublisher(RabbitTemplate rabbitTemplate) {
-        return new RabbitDeadLetterMessagePublisher(rabbitTemplate);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean(DeadLetterMessagePublisher.class)
-    public DeadLetterMessagePublisher noopDeadLetterMessagePublisher() {
+    public DeadLetterMessagePublisher deadLetterMessagePublisher(ObjectProvider<RabbitTemplate> rabbitTemplateProvider) {
+        RabbitTemplate rabbitTemplate = rabbitTemplateProvider.getIfAvailable();
+        if (rabbitTemplate != null) {
+            return new RabbitDeadLetterMessagePublisher(rabbitTemplate);
+        }
         return new NoopDeadLetterMessagePublisher();
     }
 }

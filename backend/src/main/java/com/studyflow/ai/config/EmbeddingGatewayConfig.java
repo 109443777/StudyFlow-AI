@@ -21,8 +21,9 @@ public class EmbeddingGatewayConfig {
 
     @Bean
     @ConditionalOnProperty(name = "studyflow.embedding.provider", havingValue = "langchain4j")
-    public EmbeddingGateway langChain4jEmbeddingGateway(EmbeddingModel embeddingModel) {
-        return new LangChain4jEmbeddingGateway(embeddingModel);
+    public EmbeddingGateway langChain4jEmbeddingGateway(EmbeddingModel embeddingModel,
+                                                         LangChainProperties langChainProperties) {
+        return new LangChain4jEmbeddingGateway(embeddingModel, langChainProperties.getEmbeddingBatchSize());
     }
 
     @Bean

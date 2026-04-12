@@ -82,6 +82,7 @@ studyflow:
   langchain4j:
     chat-model: ${AI_CHAT_MODEL:}
     embedding-model: ${AI_EMBEDDING_MODEL:}
+    embedding-batch-size: ${AI_EMBEDDING_BATCH_SIZE:10}
     api-key: ${AI_API_KEY:}
     base-url: ${AI_BASE_URL:}
     timeout: ${AI_TIMEOUT:30s}

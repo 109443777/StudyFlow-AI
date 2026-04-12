@@ -23,4 +23,6 @@ public class LangChainProperties {
     private Boolean logRequests = false;
 
     private Boolean logResponses = false;
+
+    private Integer embeddingBatchSize = 10;
 }
