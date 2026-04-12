@@ -140,7 +140,6 @@ public class ParseTaskServiceImpl implements ParseTaskService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public void processTask(Long taskId) {
         ParseTask parseTask = getTaskById(taskId);
         if (ParseTaskStatusEnum.SUCCESS.name().equals(parseTask.getStatus())) {

@@ -15,6 +15,8 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 
 class ExternalMediaTranscriptionGatewayTests {
@@ -55,12 +57,7 @@ class ExternalMediaTranscriptionGatewayTests {
     @Test
     void shouldSubmitAliyunTaskPollAndParseTranscriptionResult() throws Exception {
         try (FakeAliyunTranscriptionServer server = FakeAliyunTranscriptionServer.start()) {
-            TranscriptionProperties properties = new TranscriptionProperties();
-            properties.getExternal().setBaseUrl(server.baseUrl());
-            properties.getExternal().setApiKey("dashscope-key");
-            properties.getExternal().setModel("paraformer-v2");
-            properties.getExternal().setPollIntervalMillis(1);
-            properties.getExternal().setMaxPollAttempts(2);
+            TranscriptionProperties properties = testProperties(server);
 
             MediaTranscriptionResult result = new ExternalMediaTranscriptionGateway(properties)
                     .transcribe(MediaTranscriptionRequest.builder()
@@ -84,6 +81,36 @@ class ExternalMediaTranscriptionGatewayTests {
     }
 
     @Test
+    void shouldUploadLocalAudioAsDashScopeTemporaryFileAndResolveOssResource() throws Exception {
+        Path audioFile = Files.createTempFile("studyflow-audio-", ".wav");
+        Files.writeString(audioFile, "fake wav bytes", StandardCharsets.UTF_8);
+        try (FakeAliyunTranscriptionServer server = FakeAliyunTranscriptionServer.start()) {
+            TranscriptionProperties properties = testProperties(server);
+
+            MediaTranscriptionResult result = new ExternalMediaTranscriptionGateway(properties)
+                    .transcribe(MediaTranscriptionRequest.builder()
+                            .materialId(1L)
+                            .fileName("lecture.wav")
+                            .fileType("wav")
+                            .mediaType(MediaTypeEnum.AUDIO)
+                            .localFilePath(audioFile.toString())
+                            .fileUrl("http://localhost:9000/studyflow/lecture.wav")
+                            .build());
+
+            assertEquals("第一句\n第二句", result.getTranscriptText());
+            assertEquals("enable", server.getOssResourceResolveHeader());
+            assertEquals(true, server.getSubmitBody().contains("\"file_urls\":[\"oss://dashscope-instant/studyflow-test/"));
+            assertEquals(true, server.getSubmitBody().contains(".wav\"]"));
+            assertEquals("POST", server.getUploadMethod());
+            assertEquals(true, server.getUploadBody().contains("name=\"file\""));
+            assertEquals(true, server.getUploadBody().contains("name=\"Signature\""));
+            assertEquals(true, server.getPolicyPath().contains("/api/v1/uploads"));
+        } finally {
+            Files.deleteIfExists(audioFile);
+        }
+    }
+
+    @Test
     void shouldRejectMissingFileUrlForExternalTranscription() {
         TranscriptionProperties properties = new TranscriptionProperties();
         properties.getExternal().setBaseUrl("https://dashscope.aliyuncs.com/api/v1");
@@ -96,6 +123,16 @@ class ExternalMediaTranscriptionGatewayTests {
                         .build()));
     }
 
+    private static TranscriptionProperties testProperties(FakeAliyunTranscriptionServer server) {
+        TranscriptionProperties properties = new TranscriptionProperties();
+        properties.getExternal().setBaseUrl(server.baseUrl());
+        properties.getExternal().setApiKey("dashscope-key");
+        properties.getExternal().setModel("paraformer-v2");
+        properties.getExternal().setPollIntervalMillis(1);
+        properties.getExternal().setMaxPollAttempts(2);
+        return properties;
+    }
+
     private static final class FakeAliyunTranscriptionServer implements AutoCloseable {
 
         private final HttpServer httpServer;
@@ -104,7 +141,15 @@ class ExternalMediaTranscriptionGatewayTests {
 
         private volatile String asyncHeader;
 
+        private volatile String ossResourceResolveHeader;
+
         private volatile String submitBody;
+
+        private volatile String uploadMethod;
+
+        private volatile String uploadBody;
+
+        private volatile String policyPath;
 
         private FakeAliyunTranscriptionServer(HttpServer httpServer) {
             this.httpServer = httpServer;
@@ -115,6 +160,8 @@ class ExternalMediaTranscriptionGatewayTests {
             FakeAliyunTranscriptionServer server = new FakeAliyunTranscriptionServer(httpServer);
             httpServer.createContext("/api/v1/services/audio/asr/transcription", server::handleSubmit);
             httpServer.createContext("/api/v1/tasks/task-001", server::handleTask);
+            httpServer.createContext("/api/v1/uploads", server::handleUploadPolicy);
+            httpServer.createContext("/oss-upload", server::handleUpload);
             httpServer.createContext("/transcriptions/result.json", server::handleResult);
             httpServer.start();
             return server;
@@ -132,8 +179,24 @@ class ExternalMediaTranscriptionGatewayTests {
             return asyncHeader;
         }
 
+        String getOssResourceResolveHeader() {
+            return ossResourceResolveHeader;
+        }
+
         String getSubmitBody() {
             return submitBody;
+        }
+
+        String getUploadMethod() {
+            return uploadMethod;
+        }
+
+        String getUploadBody() {
+            return uploadBody;
+        }
+
+        String getPolicyPath() {
+            return policyPath;
         }
 
         @Override
@@ -144,6 +207,7 @@ class ExternalMediaTranscriptionGatewayTests {
         private void handleSubmit(HttpExchange exchange) throws IOException {
             authorizationHeader = exchange.getRequestHeaders().getFirst("Authorization");
             asyncHeader = exchange.getRequestHeaders().getFirst("X-DashScope-Async");
+            ossResourceResolveHeader = exchange.getRequestHeaders().getFirst("X-DashScope-OssResourceResolve");
             submitBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             writeJson(exchange, """
                     {"output":{"task_id":"task-001","task_status":"PENDING"}}
@@ -154,6 +218,19 @@ class ExternalMediaTranscriptionGatewayTests {
             writeJson(exchange, """
                     {"output":{"task_id":"task-001","task_status":"SUCCEEDED","results":[{"file_url":"http://storage.example.com/lecture.wav","transcription_url":"%s/transcriptions/result.json","subtask_status":"SUCCEEDED"}]}}
                     """.formatted("http://localhost:" + httpServer.getAddress().getPort()));
+        }
+
+        private void handleUploadPolicy(HttpExchange exchange) throws IOException {
+            policyPath = exchange.getRequestURI().toString();
+            writeJson(exchange, """
+                    {"data":{"upload_host":"%s/oss-upload","upload_dir":"dashscope-instant/studyflow-test","policy":"test-policy","signature":"test-signature","oss_access_key_id":"test-access-key","x_oss_object_acl":"private","x_oss_forbid_overwrite":"false"}}
+                    """.formatted("http://localhost:" + httpServer.getAddress().getPort()));
+        }
+
+        private void handleUpload(HttpExchange exchange) throws IOException {
+            uploadMethod = exchange.getRequestMethod();
+            uploadBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.ISO_8859_1);
+            writeJson(exchange, "{}");
         }
 
         private void handleResult(HttpExchange exchange) throws IOException {

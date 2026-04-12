@@ -12,13 +12,15 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.util.StringUtils;
 
-@RequiredArgsConstructor
+@Slf4j
 public class ExternalMediaTranscriptionGateway implements MediaTranscriptionGateway {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -26,6 +28,13 @@ public class ExternalMediaTranscriptionGateway implements MediaTranscriptionGate
     private final TranscriptionProperties transcriptionProperties;
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
+
+    private final DashScopeTemporaryFileUploader temporaryFileUploader;
+
+    public ExternalMediaTranscriptionGateway(TranscriptionProperties transcriptionProperties) {
+        this.transcriptionProperties = transcriptionProperties;
+        this.temporaryFileUploader = new DashScopeTemporaryFileUploader(transcriptionProperties);
+    }
 
     @Override
     public MediaTranscriptionResult transcribe(MediaTranscriptionRequest request) {
@@ -35,11 +44,9 @@ public class ExternalMediaTranscriptionGateway implements MediaTranscriptionGate
             throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY,
                     "external transcription gateway is not configured");
         }
-        if (!StringUtils.hasText(request.getFileUrl())) {
-            throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "file url is required for external transcription");
-        }
         try {
-            String taskId = submitTask(request.getFileUrl());
+            String inputUrl = resolveInputUrl(request);
+            String taskId = submitTask(inputUrl);
             String transcriptionUrl = waitForTranscriptionUrl(taskId);
             return readTranscriptionResult(transcriptionUrl);
         } catch (IOException exception) {
@@ -48,6 +55,31 @@ public class ExternalMediaTranscriptionGateway implements MediaTranscriptionGate
             Thread.currentThread().interrupt();
             throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "external transcription request interrupted");
         }
+    }
+
+    private String resolveInputUrl(MediaTranscriptionRequest request) {
+        if (shouldUploadTemporaryFile(request)) {
+            return temporaryFileUploader.upload(Path.of(request.getLocalFilePath()));
+        }
+        if (StringUtils.hasText(request.getFileUrl())) {
+            return request.getFileUrl();
+        }
+        throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "file url is required for external transcription");
+    }
+
+    private boolean shouldUploadTemporaryFile(MediaTranscriptionRequest request) {
+        if (!StringUtils.hasText(request.getLocalFilePath())) {
+            return false;
+        }
+        Path localFilePath = Path.of(request.getLocalFilePath());
+        if (!Files.exists(localFilePath)) {
+            return false;
+        }
+        String fileUrl = request.getFileUrl();
+        return !StringUtils.hasText(fileUrl)
+                || fileUrl.contains("localhost")
+                || fileUrl.contains("127.0.0.1")
+                || fileUrl.startsWith("file:");
     }
 
     private String submitTask(String fileUrl) throws IOException, InterruptedException {
@@ -59,6 +91,7 @@ public class ExternalMediaTranscriptionGateway implements MediaTranscriptionGate
                 .header("Authorization", "Bearer " + transcriptionProperties.getExternal().getApiKey())
                 .header("Content-Type", "application/json")
                 .header("X-DashScope-Async", "enable")
+                .header("X-DashScope-OssResourceResolve", fileUrl.startsWith("oss://") ? "enable" : "disable")
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
         JsonNode output = sendForJson(request).path("output");
@@ -87,7 +120,9 @@ public class ExternalMediaTranscriptionGateway implements MediaTranscriptionGate
                         "external transcription result url is empty");
             }
             if ("FAILED".equalsIgnoreCase(status)) {
-                throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "external transcription task failed");
+                String message = output.path("message").asText(output.path("task_metrics").toString());
+                throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY,
+                        "external transcription task failed, detail=" + sanitizeBody(message));
             }
             Thread.sleep(transcriptionProperties.getExternal().getPollIntervalMillis());
         }
@@ -164,9 +199,27 @@ public class ExternalMediaTranscriptionGateway implements MediaTranscriptionGate
     private JsonNode sendForJson(HttpRequest request) throws IOException, InterruptedException {
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "external transcription request failed");
+            throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, buildHttpFailureMessage(
+                    "external transcription request failed", response.statusCode(), response.body()));
         }
         return OBJECT_MAPPER.readTree(response.body());
+    }
+
+    private String buildHttpFailureMessage(String message, int statusCode, String body) {
+        String sanitizedBody = sanitizeBody(body);
+        log.warn("{}, status={}, body={}", message, statusCode, sanitizedBody);
+        return message + ", status=" + statusCode + ", body=" + sanitizedBody;
+    }
+
+    private String sanitizeBody(String body) {
+        if (!StringUtils.hasText(body)) {
+            return "";
+        }
+        String compactBody = body.replaceAll("\\s+", " ").trim();
+        if (compactBody.length() > 500) {
+            return compactBody.substring(0, 500) + "...";
+        }
+        return compactBody;
     }
 
     private String endpoint(String path) {
