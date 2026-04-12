@@ -31,7 +31,9 @@ public class LangChain4jAiGateway implements AiGateway {
 
     @Override
     public StudyContentAnalysisResult analyzeStudyContent(AiStudyContentRequest request) {
-        String rawResponse = chatLanguageModel.generate(buildStudyAnalysisPrompt(request));
+        String rawResponse = executeTextGeneration(
+                () -> chatLanguageModel.generate(buildStudyAnalysisPrompt(request)),
+                "AI study content generation timed out or failed, please retry later");
         try {
             StudyContentAnalysisResult result = OBJECT_MAPPER.readValue(
                     extractJsonPayload(rawResponse),
@@ -47,9 +49,11 @@ public class LangChain4jAiGateway implements AiGateway {
 
     @Override
     public String answer(String question, List<String> contexts) {
-        Response<AiMessage> response = chatLanguageModel.generate(List.of(
-                SystemMessage.from(buildRagSystemPrompt()),
-                UserMessage.from(buildRagUserPrompt(question, contexts))));
+        Response<AiMessage> response = executeResponseGeneration(
+                () -> chatLanguageModel.generate(List.of(
+                        SystemMessage.from(buildRagSystemPrompt()),
+                        UserMessage.from(buildRagUserPrompt(question, contexts)))),
+                "AI answer generation timed out or failed, please retry later");
         String answer = response == null || response.content() == null ? null : response.content().text();
         if (!StringUtils.hasText(answer)) {
             throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY,
@@ -192,5 +196,37 @@ public class LangChain4jAiGateway implements AiGateway {
             return "";
         }
         return value.length() <= 400 ? value : value.substring(0, 400) + "...";
+    }
+
+    private String executeTextGeneration(TextGenerationAction action, String failureMessage) {
+        try {
+            return action.execute();
+        } catch (BusinessException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            log.warn("LangChain4j text generation failed: {}", exception.getMessage(), exception);
+            throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, failureMessage);
+        }
+    }
+
+    private Response<AiMessage> executeResponseGeneration(ResponseGenerationAction action, String failureMessage) {
+        try {
+            return action.execute();
+        } catch (BusinessException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            log.warn("LangChain4j response generation failed: {}", exception.getMessage(), exception);
+            throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, failureMessage);
+        }
+    }
+
+    @FunctionalInterface
+    private interface TextGenerationAction {
+        String execute();
+    }
+
+    @FunctionalInterface
+    private interface ResponseGenerationAction {
+        Response<AiMessage> execute();
     }
 }

@@ -1,10 +1,13 @@
 package com.studyflow.ai;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.studyflow.ai.common.exception.BusinessException;
 import com.studyflow.ai.gateway.AiStudyContentRequest;
 import com.studyflow.ai.gateway.LangChain4jAiGateway;
 import com.studyflow.ai.gateway.LangChain4jEmbeddingGateway;
+import com.studyflow.ai.enums.ResultCodeEnum;
 import com.studyflow.ai.service.ai.StudyContentAnalysisResult;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.message.ChatMessage;
@@ -104,6 +107,20 @@ class LangChain4jGatewayUnitTests {
         assertThat(answer).contains("If some context is noisy or incomplete, still answer from the useful parts first");
         assertThat(answer).contains("核心贡献");
         assertThat(answer).contains("Authorized licensed use limited to: SHENZHEN UNIVERSITY.");
+    }
+
+    @Test
+    void shouldWrapChatTimeoutAsBusinessException() {
+        ChatLanguageModel chatLanguageModel = messages -> {
+            throw new RuntimeException("java.io.InterruptedIOException: timeout");
+        };
+        LangChain4jAiGateway gateway = new LangChain4jAiGateway(chatLanguageModel);
+
+        assertThatThrownBy(() -> gateway.answer("question", List.of("Chunk 1: content")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("AI answer generation timed out or failed, please retry later")
+                .extracting(exception -> ((BusinessException) exception).getCode())
+                .isEqualTo(ResultCodeEnum.SYSTEM_BUSY.getCode());
     }
 
     private static class FakeEmbeddingModel implements EmbeddingModel {
