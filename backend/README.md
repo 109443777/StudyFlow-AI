@@ -1,86 +1,88 @@
-# StudyFlow AI Backend
+# StudyFlow AI 后端
 
-StudyFlow AI backend project built with Spring Boot 3, Java 17, and Maven.
+StudyFlow AI 是一个面向大学生学习场景的多模态学习资料解析与智能问答平台。后端基于 Spring Boot 3、Java 17 和 Maven 构建。
 
-Current backend capabilities include:
-- user registration and JWT login
-- material upload and chunk upload resume
-- async parse task center
-- document text extraction
-- audio and video transcription
-- AI content understanding
-- embedding and RAG question answering
-- study outline and study plan generation
-- governance features such as idempotency, rate limit, retry, and compensation
+当前后端已经具备以下能力：
 
-## Local Infra
+- 用户注册、登录与 JWT 鉴权
+- 普通资料上传与分片上传、断点续传
+- RabbitMQ 异步解析任务中心
+- PDF、Word、PPT、TXT、Markdown 文本解析
+- 音频和视频转写链路
+- AI 摘要、关键词、知识点和复习重点生成
+- 文本切片、embedding 向量化与 RAG 问答
+- 复习提纲与学习计划生成
+- 幂等、限流、重试、失败补偿等系统治理能力
 
-Start the required infrastructure from the `backend` directory:
+## 本地基础设施
+
+在 `backend` 目录下启动依赖组件：
 
 ```bash
 docker compose up -d
 ```
 
-Default exposed ports:
-- MySQL: `3307`
-- Redis: `6379`
-- RabbitMQ: `5672`
-- RabbitMQ Management: `15672`
-- MinIO API: `9000`
-- MinIO Console: `9001`
-- Milvus: `19530`
-- Milvus Health/Metrics: `9091`
+默认端口：
 
-Why MySQL uses `3307`:
-- Many Windows environments already have a local MySQL service on `3306`
-- The compose file uses `3307` by default to avoid port conflicts
+- MySQL：`3307`
+- Redis：`6379`
+- RabbitMQ：`5672`
+- RabbitMQ 管理台：`15672`
+- MinIO API：`9000`
+- MinIO 控制台：`9001`
+- Milvus：`19530`
+- Milvus 健康检查/指标端口：`9091`
 
-If your machine does not use `3306`, you can switch back:
+MySQL 默认使用 `3307` 的原因：
+
+- 很多 Windows 电脑本地已经占用了 `3306`
+- Compose 默认使用 `3307` 可以降低端口冲突概率
+
+如果你本机没有占用 `3306`，也可以切回：
 
 ```bash
 MYSQL_HOST_PORT=3306 docker compose up -d
 ```
 
-Check container status:
+查看容器状态：
 
 ```bash
 docker compose ps
 ```
 
-## Database Bootstrap
+## 数据库初始化
 
-The compose file mounts MySQL init scripts from:
+Compose 会挂载 MySQL 初始化脚本目录：
 
 ```text
 backend/docker/mysql/init
 ```
 
-On a fresh MySQL volume, all current StudyFlow tables are created automatically.
+如果是全新的 MySQL volume，当前项目所需的数据表会自动创建。
 
-## Local Application Config
+## 本地应用配置
 
-Copy the example local config and fill in your own secrets:
+复制本地配置示例，并填入你自己的密钥：
 
 ```bash
 cp application-local.example.yml config/application-local.yml
 ```
 
-PowerShell:
+PowerShell：
 
 ```powershell
 Copy-Item .\application-local.example.yml .\config\application-local.yml
 ```
 
-Notes:
-- `config/application-local.yml` is ignored by Git
-- use it for AI keys and local overrides
-- if you use the default Docker MySQL port, keep the datasource port as `3307`
+注意：
 
-## Vector Store Setup
+- `config/application-local.yml` 已被 Git 忽略
+- AI Key、转写 Key、本地环境覆盖配置都放在这里
+- 如果使用默认 Docker MySQL 端口，应用 datasource 端口保持 `3307`
 
-RAG retrieval now defaults to `milvus` for the real vector-search path. MySQL still stores `material_chunk.embedding_vector` as an observability and degraded-search fallback.
+## RAG 与 Milvus 向量库
 
-Recommended local config:
+当前 RAG 向量检索默认走真实 Milvus：
 
 ```yaml
 studyflow:
@@ -96,25 +98,63 @@ studyflow:
       batch-size: 64
 ```
 
-Notes:
-- Milvus uses its own internal MinIO service in Docker Compose. This is separate from the StudyFlow file-storage MinIO used for uploaded documents, audio, and video.
-- `dimension` must match the embedding model output dimension. If you change the embedding model, update `studyflow.vector-store.milvus.dimension` at the same time.
-- `fallback-to-database: true` lets RAG search fall back to MySQL cosine retrieval if Milvus is temporarily unavailable.
-- `batch-size` controls how many chunk vectors are upserted to Milvus in one request, which avoids oversized writes for long PDFs and video transcripts.
-- The current Milvus collection stores `chunk_id`, `material_id`, `chunk_index`, `chunk_text`, and `embedding`, while MySQL keeps the original chunk metadata for fallback and debugging.
-- Docker Compose uses Milvus standalone for local development. Real production high availability should use Milvus cluster or a managed vector database with replicated etcd/object storage.
+完整链路：
 
-## Media Transcription Setup
+```text
+上传资料
+-> 原始文件保存到 MinIO
+-> 文档解析或音视频转写生成文本
+-> 文本保存到 material_content
+-> 按章节/段落优先切片，超长段落再滑动窗口切片
+-> chunk 保存到 material_chunk
+-> 调用 embedding gateway 生成向量
+-> 向量写入 Milvus
+-> MySQL 同步保留 embedding_vector 作为观测和降级检索数据
+-> 用户提问时优先从 Milvus topK 召回
+-> 拼接上下文，调用大模型生成基于资料的回答
+-> 问答记录与引用 chunk 写入 qa_message
+```
 
-The default local transcription provider is `mock`, so audio and video tasks can run without an external ASR account.
+说明：
 
-To test the external Aliyun Bailian/DashScope transcription path:
+- Milvus 在 Docker Compose 中使用自己的内部 MinIO，这和 StudyFlow 用于保存上传资料的 MinIO 是两套用途，不要混淆。
+- `dimension` 必须和 embedding 模型输出维度一致。当前阿里云 `text-embedding-v4` 按 `1024` 配置。
+- `fallback-to-database: true` 表示 Milvus 暂时不可用时，RAG 检索可以降级到 MySQL 中的 embedding JSON 做余弦相似度召回。
+- `batch-size` 控制每批写入 Milvus 的 chunk 数量，避免长 PDF 或视频转写文本一次性写入过大。
+- 当前 Docker Compose 使用的是 Milvus standalone，适合本地开发和项目演示；真正生产级高可用应使用 Milvus Cluster 或托管向量数据库。
 
-1. Install FFmpeg and make sure `ffmpeg` is available in `PATH`.
-2. Configure `config/application-local.yml`.
-3. Make sure the audio file URL passed to Aliyun is reachable by Aliyun. If MinIO runs only on `localhost`, the cloud ASR service usually cannot download it. Use a public MinIO endpoint, OSS URL, or another reachable object URL for real external transcription tests.
+## AI 与 Embedding 配置
 
-Example:
+默认主配置里 AI 和 embedding 仍保留 `mock` 作为安全兜底，方便无 Key 时启动项目。你要测试真实 AI/RAG 效果时，需要在 `config/application-local.yml` 中启用 LangChain4j：
+
+```yaml
+studyflow:
+  ai:
+    provider: langchain4j
+  embedding:
+    provider: langchain4j
+  langchain4j:
+    chat-model: qwen-plus
+    embedding-model: text-embedding-v4
+    api-key: your-api-key
+    base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    timeout: 30s
+    max-retries: 2
+```
+
+如果 embedding 仍使用 `mock`，RAG 链路仍能跑通，但向量不是语义向量，不适合作为真实效果评估。
+
+## 音视频转写配置
+
+默认本地转写 provider 是 `mock`，因此没有外部 ASR 账号也能跑通音视频任务链路。
+
+如果要测试阿里云百炼/DashScope 真实转写：
+
+1. 安装 FFmpeg，并确保命令行能访问 `ffmpeg`
+2. 配置 `config/application-local.yml`
+3. 确保传给阿里云的音频 URL 能被阿里云访问。如果 MinIO 只运行在 `localhost`，云端 ASR 通常无法下载该文件，需要使用公网 MinIO、OSS URL 或其他可访问的对象地址
+
+示例：
 
 ```yaml
 studyflow:
@@ -131,85 +171,85 @@ studyflow:
       max-poll-attempts: 60
 ```
 
-Current media flow:
+当前音视频处理链路：
 
-- audio: `MinIO URL -> Aliyun transcription -> media_transcript -> material_content`
-- video: `MinIO download -> FFmpeg extract wav -> temporary object URL -> Aliyun transcription -> media_transcript -> material_content`
+- 音频：`MinIO URL -> 阿里云转写 -> media_transcript -> material_content`
+- 视频：`MinIO 下载视频 -> FFmpeg 抽取 wav -> 临时音频对象 URL -> 阿里云转写 -> media_transcript -> material_content`
 
-## Run The App
+## 启动后端
 
-Default startup:
+默认启动：
 
 ```bash
 ./mvnw spring-boot:run
 ```
 
-Run with local profile:
+使用本地 profile：
 
 ```bash
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
-PowerShell:
+PowerShell：
 
 ```powershell
 .\mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
-## Run Tests
+## 运行测试
 
 ```bash
 ./mvnw test
 ```
 
-PowerShell:
+PowerShell：
 
 ```powershell
 .\mvnw.cmd test
 ```
 
-## Common Endpoints
+## 常用入口
 
-- Swagger UI: `http://localhost:8080/swagger-ui/index.html`
-- Health API: `http://localhost:8080/api/health`
-- Static test console: `http://localhost:8080/index.html`
-- RabbitMQ Management: `http://localhost:15672`
-- MinIO Console: `http://localhost:9001`
+- Swagger UI：`http://localhost:8080/swagger-ui/index.html`
+- 健康检查接口：`http://localhost:8080/api/health`
+- 静态测试页面：`http://localhost:8080/index.html`
+- RabbitMQ 管理台：`http://localhost:15672`
+- MinIO 控制台：`http://localhost:9001`
 
-## Static Test Console
+## 静态测试页面
 
-Before using the static test console, make sure `docker compose up -d` has started the required Docker services (`MySQL`, `Redis`, `RabbitMQ`, `MinIO`, and `Milvus`), and that the backend service is running.
+使用静态测试页面前，请先确认 `docker compose up -d` 已启动 `MySQL`、`Redis`、`RabbitMQ`、`MinIO` 和 `Milvus`，并且后端服务已经启动。
 
-Open the console at:
+打开：
 
 ```text
 http://localhost:8080/index.html
 ```
 
-Recommended usage order:
+推荐测试顺序：
 
-1. Health check (no login required)
-2. Login
-3. Upload
-4. Parse query
-5. Q&A
-6. Study plan
-7. Failure compensation
+1. 健康检查
+2. 登录
+3. 上传资料
+4. 查询解析任务
+5. RAG 问答
+6. 学习计划
+7. 失败补偿
 
-## Default Infra Credentials
+## 本地默认账号密码
 
-For local development only:
+仅用于本地开发：
 
 - MySQL
-  - database: `studyflow_ai`
-  - username: `studyflow`
-  - password: `studyflow123`
-  - root password: `root123456`
+  - 数据库：`studyflow_ai`
+  - 用户名：`studyflow`
+  - 密码：`studyflow123`
+  - root 密码：`root123456`
 - Redis
-  - password: `redis123456`
+  - 密码：`redis123456`
 - RabbitMQ
-  - username: `studyflow`
-  - password: `studyflow123`
+  - 用户名：`studyflow`
+  - 密码：`studyflow123`
 - MinIO
-  - access key: `studyflow`
-  - secret key: `studyflow123`
+  - access key：`studyflow`
+  - secret key：`studyflow123`
