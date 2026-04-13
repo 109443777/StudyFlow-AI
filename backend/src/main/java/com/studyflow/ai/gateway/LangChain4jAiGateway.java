@@ -4,16 +4,18 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyflow.ai.common.exception.BusinessException;
+import com.studyflow.ai.common.util.ChineseTextSupport;
 import com.studyflow.ai.enums.ResultCodeEnum;
 import com.studyflow.ai.service.ai.ChapterHighlight;
 import com.studyflow.ai.service.ai.StudyContentAnalysisResult;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.model.StreamingResponseHandler;
 import dev.langchain4j.model.chat.ChatLanguageModel;
 import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import dev.langchain4j.model.output.Response;
-import dev.langchain4j.model.StreamingResponseHandler;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +26,8 @@ public class LangChain4jAiGateway implements AiGateway {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+
+    private static final int STREAM_SEGMENT_LENGTH = 28;
 
     private final ChatLanguageModel chatLanguageModel;
 
@@ -66,7 +70,7 @@ public class LangChain4jAiGateway implements AiGateway {
             throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY,
                     "langchain4j ai returned an empty answer");
         }
-        return answer.trim();
+        return ensureChineseAnswer(answer.trim());
     }
 
     @Override
@@ -79,7 +83,10 @@ public class LangChain4jAiGateway implements AiGateway {
                     new StreamingResponseHandler<AiMessage>() {
                         @Override
                         public void onNext(String token) {
-                            streamHandler.onNext(token);
+                            if (!StringUtils.hasText(token)) {
+                                return;
+                            }
+                            splitStreamingText(token).forEach(streamHandler::onNext);
                         }
 
                         @Override
@@ -108,8 +115,8 @@ public class LangChain4jAiGateway implements AiGateway {
         return """
                 %s
 
-                Return ONLY valid JSON with the exact structure below.
-                Do not add markdown fences, explanations, or any extra text.
+                请仅返回合法 JSON，不要输出 markdown 代码块、解释说明或额外文本。
+                所有 value 必须使用简体中文，JSON key 保持下面的英文结构不变：
                 {
                   "summary": "string",
                   "keywords": ["string"],
@@ -123,25 +130,26 @@ public class LangChain4jAiGateway implements AiGateway {
                   "reviewOutline": ["string"]
                 }
 
-                Requirements:
-                - All fields must exist.
-                - Use concise, revision-friendly language.
-                - keywords should contain 5 to 8 items.
-                - keyPoints should contain 4 to 8 items.
-                - chapterHighlights should group the material by chapter or topic when possible.
-                - reviewOutline should be a practical student revision checklist.
+                进一步要求：
+                - 所有字段都必须存在。
+                - summary 要简洁，适合学生快速理解和考前回顾。
+                - keywords 提取 5 到 8 个。
+                - keyPoints 提取 4 到 8 个。
+                - chapterHighlights 尽量按章节或主题归类。
+                - reviewOutline 必须像学生可执行的复习提纲。
+                - 不要输出英文答案，除非资料中必须保留英文术语；即便保留术语，也要配中文解释。
                 """.formatted(request.getPrompt());
     }
 
     private String buildRagSystemPrompt() {
         return """
-                You are StudyFlow AI, a learning assistant for university students.
-                Your job is to teach the student clearly, using only the retrieved study material.
-                Prefer explaining the topic in a study-friendly way instead of giving a retrieval audit report.
-                Focus on the document's core ideas, definitions, methods, conclusions, and revision value.
-                Ignore references, copyright notices, page headers, page footers, repeated fragments, and noisy extraction artifacts unless the student explicitly asks about them.
-                If some context is noisy or incomplete, still answer from the useful parts first, then briefly state what remains uncertain.
-                Do not invent facts outside the retrieved material.
+                你是 StudyFlow AI，一名面向大学生学习场景的智能学习助手。
+                你的任务是基于检索到的学习资料片段，用简体中文清晰地讲解知识点。
+                请优先解释核心概念、方法、结论、公式意义和复习价值，而不是写检索审计报告。
+                除非学生明确要求，否则请忽略参考文献、版权声明、页眉页脚、重复片段和解析噪声。
+                如果上下文存在噪声或残缺，请先利用有效内容回答，再简要说明不确定之处。
+                你必须始终使用简体中文回答，不要输出英文整段回答。
+                不要编造资料中不存在的事实。
                 """;
     }
 
@@ -151,22 +159,23 @@ public class LangChain4jAiGateway implements AiGateway {
                 .map(String::trim)
                 .toList();
         String contextBlock = safeContexts.isEmpty()
-                ? "No retrieved material context was provided."
+                ? "当前没有检索到可用的资料片段。"
                 : String.join("\n", safeContexts);
         String safeQuestion = question == null ? "" : question.trim();
         return """
-                Study material excerpts:
+                学习资料片段：
                 %s
 
-                Student request:
+                学生请求：
                 %s
 
-                Answer requirements:
-                1. Start with the most likely useful explanation or summary from the valid material content.
-                2. When the question asks for key points, summarize them in a student-friendly way.
-                3. If the retrieved content is partially noisy, ignore the noisy parts and use the meaningful parts.
-                4. Only mention insufficiency after you have extracted whatever can be confirmed from the material.
-                5. If the excerpts mainly contain references or repeated fragments, say that briefly and avoid over-explaining the failure.
+                回答要求：
+                1. 必须使用简体中文回答。
+                2. 先给出对学生最有帮助的解释或总结，再补充细节。
+                3. 如果问题要求总结重点，请用便于复习的表达方式整理。
+                4. 如果片段中既有正文也有噪声，请忽略噪声，只使用有意义的内容。
+                5. 只有在确实无法确认时，才说明“根据当前资料无法确认”。
+                6. 如果片段主要是参考文献或重复内容，请简短说明，不要冗长解释失败原因。
                 """.formatted(contextBlock, safeQuestion);
     }
 
@@ -201,10 +210,58 @@ public class LangChain4jAiGateway implements AiGateway {
         return chapterHighlights.stream()
                 .filter(Objects::nonNull)
                 .map(item -> ChapterHighlight.builder()
-                        .chapterTitle(StringUtils.hasText(item.getChapterTitle()) ? item.getChapterTitle().trim() : "Topic")
+                        .chapterTitle(StringUtils.hasText(item.getChapterTitle()) ? item.getChapterTitle().trim() : "主题")
                         .highlights(normalizeStringList(item.getHighlights()))
                         .build())
                 .toList();
+    }
+
+    private String ensureChineseAnswer(String answer) {
+        if (ChineseTextSupport.containsChinese(answer)) {
+            return answer;
+        }
+        String translated = executeTextGeneration(
+                () -> chatLanguageModel.generate("""
+                        请将下面的学习问答结果改写为自然、准确、简洁的简体中文。
+                        如果原文中有必要保留的英文术语，请保留术语并补充中文解释。
+                        只返回改写后的中文结果，不要添加任何额外说明。
+
+                        原文：
+                        %s
+                        """.formatted(answer)),
+                "AI answer generation timed out or failed, please retry later");
+        return StringUtils.hasText(translated) ? translated.trim() : answer;
+    }
+
+    private List<String> splitStreamingText(String token) {
+        String normalized = token == null ? "" : token;
+        if (normalized.isBlank() || normalized.length() <= STREAM_SEGMENT_LENGTH) {
+            return normalized.isBlank() ? List.of() : List.of(normalized);
+        }
+        List<String> segments = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        for (int index = 0; index < normalized.length(); index++) {
+            char ch = normalized.charAt(index);
+            current.append(ch);
+            if (shouldSplitCurrentSegment(current, ch)) {
+                segments.add(current.toString());
+                current.setLength(0);
+            }
+        }
+        if (current.length() > 0) {
+            segments.add(current.toString());
+        }
+        return segments;
+    }
+
+    private boolean shouldSplitCurrentSegment(StringBuilder current, char ch) {
+        if (current.length() >= STREAM_SEGMENT_LENGTH) {
+            return true;
+        }
+        return switch (ch) {
+            case '。', '！', '？', '；', '\n', ',', '，' -> current.length() >= 10;
+            default -> false;
+        };
     }
 
     private String extractJsonPayload(String rawResponse) {

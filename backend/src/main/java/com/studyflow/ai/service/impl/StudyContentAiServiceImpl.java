@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyflow.ai.common.exception.BusinessException;
+import com.studyflow.ai.common.util.ChineseTextSupport;
 import com.studyflow.ai.dto.MaterialSummaryQueryDTO;
 import com.studyflow.ai.entity.Material;
 import com.studyflow.ai.entity.MaterialContent;
@@ -111,6 +112,11 @@ public class StudyContentAiServiceImpl implements StudyContentAiService {
         if (materialSummary == null) {
             throw new BusinessException(ResultCodeEnum.MATERIAL_SUMMARY_NOT_FOUND);
         }
+        if (shouldRefreshToChinese(materialSummary)) {
+            log.info("Detected legacy non-Chinese summary, regenerate with Chinese prompts, materialId={}",
+                    material.getId());
+            return analyzeAndSave(material);
+        }
         return materialSummary;
     }
 
@@ -146,5 +152,14 @@ public class StudyContentAiServiceImpl implements StudyContentAiService {
         } catch (JsonProcessingException exception) {
             throw new BusinessException(ResultCodeEnum.INTERNAL_ERROR, "failed to write ai analysis result");
         }
+    }
+
+    private boolean shouldRefreshToChinese(MaterialSummary materialSummary) {
+        if (ChineseTextSupport.containsChinese(materialSummary.getSummaryText())) {
+            return false;
+        }
+        return !ChineseTextSupport.containsChinese(readStringList(materialSummary.getKeywords()))
+                || !ChineseTextSupport.containsChinese(readStringList(materialSummary.getKeyPoints()))
+                || !ChineseTextSupport.containsChinese(readStringList(materialSummary.getReviewOutline()));
     }
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
@@ -10,6 +10,7 @@ import { buildQaAnswerLoadingSteps } from '@/utils/materialStatus'
 import { getDisplayError } from '@/utils/result'
 
 const route = useRoute()
+
 const materials = ref<MaterialVO[]>([])
 const sessions = ref<QaSessionVO[]>([])
 const activeSession = ref<QaSessionVO>()
@@ -24,19 +25,18 @@ const savingScope = ref(false)
 const creatingSession = ref(false)
 const deletingSessionId = ref('')
 const loadingStepIndex = ref(0)
+const messageContainerRef = ref<HTMLElement>()
 let loadingStepTimer: number | undefined
 
 const answerLoadingSteps = buildQaAnswerLoadingSteps()
 
-const availableMaterials = computed(() =>
-  materials.value.filter(isMaterialReady),
-)
+const availableMaterials = computed(() => materials.value.filter(isMaterialReady))
 
 const selectedMaterials = computed(() =>
   materials.value.filter((item) => selectedMaterialIds.value.includes(item.id)),
 )
 
-const activeSessionTitle = computed(() => activeSession.value?.sessionName || '还没有选择对话')
+const activeSessionTitle = computed(() => activeSession.value?.sessionName || '尚未选择会话')
 
 async function loadWorkspace() {
   loading.value = true
@@ -51,55 +51,52 @@ async function loadWorkspace() {
     const queryMaterialId = String(route.query.materialId || '')
     if (queryMaterialId) {
       selectedMaterialIds.value = [queryMaterialId]
+    } else if (selectedMaterialIds.value.length === 0 && availableMaterials.value.length > 0) {
+      selectedMaterialIds.value = [availableMaterials.value[0].id]
     }
 
     if (sessions.value.length > 0) {
       await activateSession(sessions.value[0])
-      return
+    } else {
+      sessionName.value = buildDefaultSessionName()
     }
-
-    if (!queryMaterialId && availableMaterials.value.length > 0) {
-      selectedMaterialIds.value = [availableMaterials.value[0].id]
-    }
-    sessionName.value = buildDefaultSessionName()
-  } catch (err) {
-    ElMessage.error(getDisplayError(err))
+  } catch (error) {
+    ElMessage.error(getDisplayError(error))
   } finally {
     loading.value = false
   }
 }
 
-async function activateSession(qaSession: QaSessionVO) {
-  activeSession.value = qaSession
-  selectedMaterialIds.value = [...(qaSession.materialIds || [])]
-  sessionName.value = qaSession.sessionName
+async function activateSession(session: QaSessionVO) {
+  activeSession.value = session
+  selectedMaterialIds.value = [...(session.materialIds || [])]
+  sessionName.value = session.sessionName
   try {
-    messages.value = await studyflowApi.listQaMessages(qaSession.id)
-  } catch (err) {
-    ElMessage.error(getDisplayError(err))
+    messages.value = await studyflowApi.listQaMessages(session.id)
+    scrollMessagesToBottom()
+  } catch (error) {
+    ElMessage.error(getDisplayError(error))
   }
 }
 
-async function createSession() {
-  return createSessionInternal(true)
-}
-
-async function createSessionInternal(showSuccess: boolean) {
+async function createSession(showSuccess = true) {
   if (!ensureReadyMaterialSelection()) {
     return undefined
   }
   creatingSession.value = true
   try {
-    const name = sessionName.value.trim() || buildDefaultSessionName()
-    const qaSession = await studyflowApi.createQaSession(selectedMaterialIds.value, name)
-    sessions.value = [qaSession, ...sessions.value]
-    await activateSession(qaSession)
+    const created = await studyflowApi.createQaSession(
+      selectedMaterialIds.value,
+      sessionName.value.trim() || buildDefaultSessionName(),
+    )
+    sessions.value = [created, ...sessions.value]
+    await activateSession(created)
     if (showSuccess) {
-      ElMessage.success('已创建新的持久化对话')
+      ElMessage.success('已创建新的问答会话。')
     }
-    return qaSession
-  } catch (err) {
-    ElMessage.error(getDisplayError(err))
+    return created
+  } catch (error) {
+    ElMessage.error(getDisplayError(error))
     return undefined
   } finally {
     creatingSession.value = false
@@ -116,32 +113,32 @@ async function saveMaterialScope() {
   }
   savingScope.value = true
   try {
-    const updatedSession = await studyflowApi.updateQaSessionMaterials(activeSession.value.id, selectedMaterialIds.value)
-    activeSession.value = updatedSession
-    sessions.value = sessions.value.map((item) => item.id === updatedSession.id ? updatedSession : item)
-    ElMessage.success('当前对话的资料范围已更新')
-  } catch (err) {
-    ElMessage.error(getDisplayError(err))
+    const updated = await studyflowApi.updateQaSessionMaterials(activeSession.value.id, selectedMaterialIds.value)
+    activeSession.value = updated
+    sessions.value = sessions.value.map((item) => (item.id === updated.id ? updated : item))
+    ElMessage.success('当前会话的资料范围已更新。')
+  } catch (error) {
+    ElMessage.error(getDisplayError(error))
   } finally {
     savingScope.value = false
   }
 }
 
 async function ask() {
-  if (!currentQuestion.value.trim()) {
-    ElMessage.warning('请输入问题')
+  const question = currentQuestion.value.trim()
+  if (!question) {
+    ElMessage.warning('请输入你的问题。')
     return
   }
 
   let session = activeSession.value
   if (!session) {
-    session = await createSessionInternal(false)
+    session = await createSession(false)
   }
   if (!session) {
     return
   }
 
-  const question = currentQuestion.value.trim()
   currentQuestion.value = ''
   asking.value = true
   startAnswerLoading()
@@ -161,6 +158,7 @@ async function ask() {
     createTime: new Date().toISOString(),
   }
   messages.value.push(questionMessage, assistantMessage)
+  scrollMessagesToBottom()
 
   let latestReferences: ChunkReferenceVO[] = []
   try {
@@ -168,18 +166,19 @@ async function ask() {
       onEvent: (event) => applyStreamEvent(event, questionMessage, assistantMessage, latestReferences),
     })
     if (!assistantMessage.content.trim()) {
-      assistantMessage.content = '本次没有返回有效回答，请稍后再试。'
+      assistantMessage.content = '本次没有收到有效回答，请稍后重试。'
     }
-  } catch (err) {
+  } catch (error) {
     if (!assistantMessage.content.trim()) {
       messages.value = messages.value.filter((item) => item.id !== assistantMessage.id)
     } else {
-      assistantMessage.content += '\n\n回答中断，请稍后重试。'
+      assistantMessage.content += '\n\n回答生成中断，请稍后重试。'
     }
-    ElMessage.error(getDisplayError(err))
+    ElMessage.error(getDisplayError(error))
   } finally {
     stopAnswerLoading()
     asking.value = false
+    scrollMessagesToBottom()
   }
 }
 
@@ -192,11 +191,13 @@ function applyStreamEvent(
   if (event.type === 'context') {
     latestReferences.splice(0, latestReferences.length, ...((event.references || []) as ChunkReferenceVO[]))
     assistantMessage.referenceChunks = [...latestReferences]
+    scrollMessagesToBottom()
     return
   }
   if (event.type === 'chunk') {
     assistantMessage.content += event.content || ''
     assistantMessage.referenceChunks = [...latestReferences]
+    scrollMessagesToBottom()
     return
   }
   if (event.type === 'done') {
@@ -204,35 +205,40 @@ function applyStreamEvent(
     assistantMessage.id = event.answerMessageId || assistantMessage.id
     assistantMessage.content = event.answer || assistantMessage.content
     assistantMessage.referenceChunks = (event.references || latestReferences) as ChunkReferenceVO[]
+    scrollMessagesToBottom()
     return
   }
   if (event.type === 'error') {
-    throw new Error(event.message || '流式问答失败')
+    throw new Error(event.message || '流式问答失败。')
   }
 }
 
 async function deleteSession(session: QaSessionVO, event?: MouseEvent) {
   event?.stopPropagation()
-  await ElMessageBox.confirm(`确定删除会话「${session.sessionName}」吗？会同时清空这段对话历史。`, '删除对话', {
-    type: 'warning',
-    confirmButtonText: '删除',
-    cancelButtonText: '取消',
-  })
+  await ElMessageBox.confirm(
+    `确定删除会话“${session.sessionName}”吗？删除后会同时清空这段问答历史。`,
+    '删除会话',
+    {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+    },
+  )
   deletingSessionId.value = session.id
   try {
     await studyflowApi.deleteQaSession(session.id)
     sessions.value = sessions.value.filter((item) => item.id !== session.id)
     if (activeSession.value?.id === session.id) {
-      const nextSession = sessions.value[0]
-      if (nextSession) {
-        await activateSession(nextSession)
+      const next = sessions.value[0]
+      if (next) {
+        await activateSession(next)
       } else {
         startNewSession()
       }
     }
-    ElMessage.success('会话已删除')
-  } catch (err) {
-    ElMessage.error(getDisplayError(err))
+    ElMessage.success('会话已删除。')
+  } catch (error) {
+    ElMessage.error(getDisplayError(error))
   } finally {
     deletingSessionId.value = ''
   }
@@ -249,7 +255,7 @@ function startNewSession() {
 
 function buildDefaultSessionName() {
   if (selectedMaterials.value.length === 0) {
-    return '新的学习资料问答'
+    return '新的资料问答'
   }
   if (selectedMaterials.value.length === 1) {
     return `${selectedMaterials.value[0].fileName} 问答`
@@ -263,12 +269,12 @@ function isMaterialReady(material: MaterialVO) {
 
 function ensureReadyMaterialSelection() {
   if (selectedMaterialIds.value.length === 0) {
-    ElMessage.warning('请至少选择一份已完成解析的资料')
+    ElMessage.warning('请至少选择一份已完成解析的资料。')
     return false
   }
   const notReadyMaterial = selectedMaterials.value.find((material) => !isMaterialReady(material))
   if (notReadyMaterial) {
-    ElMessage.warning(`《${notReadyMaterial.fileName}》还没有完成解析和向量化，请稍后再试`)
+    ElMessage.warning(`资料《${notReadyMaterial.fileName}》尚未完成解析和向量化，请稍后再试。`)
     return false
   }
   return true
@@ -289,6 +295,15 @@ function stopAnswerLoading() {
   loadingStepIndex.value = 0
 }
 
+function scrollMessagesToBottom() {
+  void nextTick(() => {
+    if (!messageContainerRef.value) {
+      return
+    }
+    messageContainerRef.value.scrollTop = messageContainerRef.value.scrollHeight
+  })
+}
+
 onMounted(loadWorkspace)
 onUnmounted(stopAnswerLoading)
 </script>
@@ -298,7 +313,7 @@ onUnmounted(stopAnswerLoading)
     <aside class="page-card qa-sidebar">
       <div class="sidebar-section">
         <div class="section-head">
-          <h2 class="section-title">我的对话</h2>
+          <h2 class="section-title">我的会话</h2>
           <el-button type="primary" link @click="startNewSession">新建</el-button>
         </div>
         <div class="session-list">
@@ -322,7 +337,7 @@ onUnmounted(stopAnswerLoading)
               删除
             </el-button>
           </div>
-          <el-empty v-if="sessions.length === 0" description="暂无对话，选择资料后提问即可创建" />
+          <el-empty v-if="sessions.length === 0" description="还没有会话，选择资料后提问即可自动创建。" />
         </div>
       </div>
 
@@ -331,7 +346,7 @@ onUnmounted(stopAnswerLoading)
           <h2 class="section-title">资料范围</h2>
           <el-button :loading="loading" link @click="loadWorkspace">刷新</el-button>
         </div>
-        <el-input v-model="sessionName" placeholder="对话名称，例如：操作系统期末复习" />
+        <el-input v-model="sessionName" placeholder="会话名称，例如：操作系统期末复习" />
         <el-checkbox-group v-model="selectedMaterialIds" class="material-checks">
           <el-checkbox
             v-for="material in materials"
@@ -350,11 +365,11 @@ onUnmounted(stopAnswerLoading)
             :loading="activeSession ? savingScope : creatingSession"
             @click="saveMaterialScope"
           >
-            {{ activeSession ? '保存资料范围' : '用所选资料创建对话' }}
+            {{ activeSession ? '保存资料范围' : '用所选资料创建会话' }}
           </el-button>
         </div>
         <p class="muted scope-tip">
-          当前选中 {{ selectedMaterialIds.length }} 份资料。只有解析成功的资料可用于问答，提问时只会在这些资料的向量片段中检索。
+          当前选中 {{ selectedMaterialIds.length }} 份资料。只有解析成功并建立索引的资料才能参与问答。
         </p>
       </div>
     </aside>
@@ -364,7 +379,7 @@ onUnmounted(stopAnswerLoading)
         <div>
           <h2 class="section-title">{{ activeSessionTitle }}</h2>
           <p class="muted">
-            回答会严格基于当前会话绑定的资料；对话历史会持久化保存，下次回来还可以继续追问。
+            回答会严格基于当前会话绑定的资料；会话历史会持久化保存，下次回来还可以继续追问。
           </p>
         </div>
         <div class="topk-control">
@@ -379,19 +394,26 @@ onUnmounted(stopAnswerLoading)
         </el-tag>
       </div>
 
-      <div class="messages">
+      <div ref="messageContainerRef" class="messages">
         <el-empty
           v-if="messages.length === 0"
-          description="选择左侧资料并提问，StudyFlow AI 会基于资料片段进行回答"
+          description="选择左侧资料并提问，StudyFlow AI 会基于资料片段进行中文回答。"
         />
-        <article v-for="message in messages" :key="message.id" class="message" :class="message.role.toLowerCase()">
+        <article
+          v-for="message in messages"
+          :key="message.id"
+          class="message"
+          :class="message.role.toLowerCase()"
+        >
           <strong>{{ message.role === 'USER' ? '我' : 'StudyFlow AI' }}</strong>
-          <p class="text-block">{{ message.content || (message.role === 'ASSISTANT' && asking ? '正在生成回答...' : '') }}</p>
+          <p class="text-block">
+            {{ message.content || (message.role === 'ASSISTANT' && asking ? '正在持续生成回答...' : '') }}
+          </p>
           <el-collapse v-if="message.referenceChunks?.length">
             <el-collapse-item title="查看引用片段">
               <div v-for="reference in message.referenceChunks" :key="reference.chunkId" class="reference">
                 <strong>
-                  {{ reference.fileName || '资料片段' }} / Chunk {{ reference.chunkIndex }} / score
+                  {{ reference.fileName || '资料片段' }} / 第 {{ reference.chunkIndex }} 段 / 分数
                   {{ reference.score.toFixed(3) }}
                 </strong>
                 <p>{{ reference.chunkText }}</p>
@@ -404,7 +426,7 @@ onUnmounted(stopAnswerLoading)
       <el-alert
         v-if="asking"
         :title="answerLoadingSteps[loadingStepIndex]"
-        :description="loadingStepIndex === 0 ? '先从当前会话绑定的资料中召回最相关片段。' : '已经拿到参考片段，正在流式生成回答。'"
+        :description="loadingStepIndex === 0 ? '正在检索当前会话绑定资料中的相关片段。' : '已经拿到参考片段，正在流式生成中文回答。'"
         type="info"
         :closable="false"
         show-icon
@@ -416,7 +438,7 @@ onUnmounted(stopAnswerLoading)
           v-model="currentQuestion"
           type="textarea"
           :rows="3"
-          placeholder="例如：请结合当前选中的几份资料，总结考试最可能考到的重点"
+          placeholder="例如：请结合当前选中的几份资料，整理考试最可能考到的重点。"
           @keydown.ctrl.enter="ask"
         />
         <el-button type="primary" size="large" :loading="asking || creatingSession" @click="ask">
@@ -575,6 +597,11 @@ onUnmounted(stopAnswerLoading)
   background: rgba(31, 111, 139, 0.12);
 }
 
+.text-block {
+  white-space: pre-wrap;
+  line-height: 1.75;
+}
+
 .reference {
   padding: 12px;
   border-bottom: 1px solid var(--sf-border);
@@ -583,6 +610,7 @@ onUnmounted(stopAnswerLoading)
 .reference p {
   margin-bottom: 0;
   line-height: 1.7;
+  white-space: pre-wrap;
 }
 
 .ask-box {

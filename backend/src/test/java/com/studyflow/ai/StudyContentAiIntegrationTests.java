@@ -139,6 +139,30 @@ class StudyContentAiIntegrationTests {
                 .andExpect(jsonPath("$.data.reviewOutline.length()").value(org.hamcrest.Matchers.greaterThanOrEqualTo(1)));
     }
 
+    @Test
+    void shouldRefreshLegacyEnglishSummaryToChineseWhenQuerying() throws Exception {
+        Material material = createMaterial();
+        createMaterialContent(material);
+        MaterialSummary legacySummary = new MaterialSummary();
+        legacySummary.setMaterialId(material.getId());
+        legacySummary.setSummaryText("Linear algebra summary");
+        legacySummary.setKeywords("[\"matrix\",\"vector\"]");
+        legacySummary.setKeyPoints("[\"Matrix multiplication\",\"Determinant\"]");
+        legacySummary.setReviewOutline("[\"Review matrix concepts\"]");
+        legacySummary.setChapterHighlights("""
+                [{"chapterTitle":"Matrix","highlights":["Matrix multiplication"]}]
+                """);
+        materialSummaryMapper.insert(legacySummary);
+
+        mockMvc.perform(get("/api/material-summaries")
+                        .param("materialId", String.valueOf(material.getId()))
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.summaryText").value(org.hamcrest.Matchers.containsString("线性")))
+                .andExpect(jsonPath("$.data.keywords[0]").value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.is("matrix"))));
+    }
+
     private Material createMaterial() {
         Material material = new Material();
         material.setUserId(userId);

@@ -31,6 +31,8 @@ import com.studyflow.ai.service.vector.ChunkSearchResult;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -165,11 +167,18 @@ public class RAGQueryServiceImpl implements RAGQueryService {
         observer.onContext(context.references());
         StringBuilder answerBuilder = new StringBuilder();
         long startTime = System.currentTimeMillis();
+        AtomicInteger chunkEventCount = new AtomicInteger(0);
+        AtomicLong firstTokenCostMs = new AtomicLong(-1L);
         aiGateway.streamAnswer(context.prompt(), context.contexts(), new com.studyflow.ai.gateway.AiAnswerStreamHandler() {
             @Override
             public void onNext(String token) {
                 if (!StringUtils.hasText(token)) {
                     return;
+                }
+                chunkEventCount.incrementAndGet();
+                if (firstTokenCostMs.compareAndSet(-1L, System.currentTimeMillis() - startTime)) {
+                    log.info("RAG streaming first token arrived, sessionId={}, materialIds={}, firstTokenCostMs={}",
+                            context.qaSession().getId(), context.materialIds(), firstTokenCostMs.get());
                 }
                 answerBuilder.append(token);
                 observer.onToken(token);
@@ -186,8 +195,9 @@ public class RAGQueryServiceImpl implements RAGQueryService {
                             userId, context.primaryMaterial(), context.qaSession(), answer, context.references());
                     qaSessionContextCache.append(context.qaSession().getId(), QaMessageRoleEnum.ASSISTANT.name(),
                             answerMessage.getContent(), ragProperties.getHistorySize());
-                    log.info("RAG streaming answer completed, sessionId={}, materialIds={}, topK={}, costMs={}",
+                    log.info("RAG streaming answer completed, sessionId={}, materialIds={}, topK={}, chunkEvents={}, firstTokenCostMs={}, costMs={}",
                             context.qaSession().getId(), context.materialIds(), context.topK(),
+                            chunkEventCount.get(), firstTokenCostMs.get(),
                             System.currentTimeMillis() - startTime);
                     observer.onComplete(QaAnswerResult.builder()
                             .sessionId(context.qaSession().getId())
@@ -234,9 +244,9 @@ public class RAGQueryServiceImpl implements RAGQueryService {
             return sessionName.trim();
         }
         if (materials.size() == 1) {
-            return "Q&A - " + primaryMaterial.getFileName();
+            return primaryMaterial.getFileName() + " 问答";
         }
-        return "Q&A - " + primaryMaterial.getFileName() + " and " + (materials.size() - 1) + " more materials";
+        return primaryMaterial.getFileName() + " 等 " + materials.size() + " 份资料问答";
     }
 
     private List<Material> getOwnedMaterials(Long userId, List<Long> materialIds) {
@@ -341,7 +351,7 @@ public class RAGQueryServiceImpl implements RAGQueryService {
                 .toList();
         List<String> contexts = references.stream()
                 .limit(3)
-                .map(item -> "File " + item.getFileName() + ", Chunk " + item.getChunkIndex() + ": "
+                .map(item -> "资料《" + item.getFileName() + "》第 " + item.getChunkIndex() + " 段："
                         + trimContext(item.getChunkText()))
                 .toList();
         String prompt = ragPromptBuilder.build(
