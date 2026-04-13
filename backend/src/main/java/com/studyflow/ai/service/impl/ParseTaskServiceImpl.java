@@ -3,6 +3,7 @@ package com.studyflow.ai.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.studyflow.ai.common.idempotency.IdempotencyGuard;
 import com.studyflow.ai.common.exception.BusinessException;
+import com.studyflow.ai.common.exception.NonRetryableTaskException;
 import com.studyflow.ai.dto.ParseTaskQueryDTO;
 import com.studyflow.ai.entity.Material;
 import com.studyflow.ai.entity.ParseTask;
@@ -165,8 +166,10 @@ public class ParseTaskServiceImpl implements ParseTaskService {
             refreshMaterialParseStatus(material.getId());
             log.info("Completed parse task successfully, taskId={}, materialId={}, taskType={}",
                     parseTask.getId(), parseTask.getMaterialId(), parseTask.getTaskType());
+        } catch (NonRetryableTaskException exception) {
+            handleTaskFailure(parseTask, material, exception.getMessage(), false);
         } catch (Exception exception) {
-            handleTaskFailure(parseTask, material, exception.getMessage());
+            handleTaskFailure(parseTask, material, exception.getMessage(), true);
         }
     }
 
@@ -271,13 +274,13 @@ public class ParseTaskServiceImpl implements ParseTaskService {
         parseTaskMapper.updateById(updateTask);
     }
 
-    private void handleTaskFailure(ParseTask parseTask, Material material, String failReason) {
+    private void handleTaskFailure(ParseTask parseTask, Material material, String failReason, boolean retryable) {
         int nextRetryCount = (parseTask.getRetryCount() == null ? 0 : parseTask.getRetryCount()) + 1;
         ParseTask updateTask = new ParseTask();
         updateTask.setId(parseTask.getId());
         updateTask.setRetryCount(nextRetryCount);
         updateTask.setFailReason(failReason);
-        if (nextRetryCount < MAX_RETRY_COUNT) {
+        if (retryable && nextRetryCount < MAX_RETRY_COUNT) {
             updateTask.setStatus(ParseTaskStatusEnum.QUEUED.name());
             parseTaskMapper.updateById(updateTask);
             log.warn("Parse task execution failed, will retry, taskId={}, materialId={}, taskType={}, retryCount={}, failReason={}",
@@ -302,8 +305,8 @@ public class ParseTaskServiceImpl implements ParseTaskService {
                     .retryCount(failedTask.getRetryCount())
                     .failReason(failReason)
                     .build());
-            log.error("Parse task execution failed permanently, taskId={}, materialId={}, taskType={}, retryCount={}, failReason={}",
-                    parseTask.getId(), material.getId(), parseTask.getTaskType(), nextRetryCount, failReason);
+            log.error("Parse task execution failed permanently, taskId={}, materialId={}, taskType={}, retryCount={}, retryable={}, failReason={}",
+                    parseTask.getId(), material.getId(), parseTask.getTaskType(), nextRetryCount, retryable, failReason);
         }
     }
 

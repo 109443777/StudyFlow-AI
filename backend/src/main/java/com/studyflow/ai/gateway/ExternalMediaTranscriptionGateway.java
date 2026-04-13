@@ -3,6 +3,7 @@ package com.studyflow.ai.gateway;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyflow.ai.common.exception.BusinessException;
+import com.studyflow.ai.common.exception.NonRetryableTaskException;
 import com.studyflow.ai.config.TranscriptionProperties;
 import com.studyflow.ai.enums.ResultCodeEnum;
 import com.studyflow.ai.service.media.MediaTranscriptionResult;
@@ -26,6 +27,8 @@ import org.springframework.util.StringUtils;
 public class ExternalMediaTranscriptionGateway implements MediaTranscriptionGateway {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+    private static final String NO_VALID_FRAGMENT_CODE = "SUCCESS_WITH_NO_VALID_FRAGMENT";
 
     private final TranscriptionProperties transcriptionProperties;
 
@@ -126,6 +129,9 @@ public class ExternalMediaTranscriptionGateway implements MediaTranscriptionGate
             }
             if ("FAILED".equalsIgnoreCase(status)) {
                 String message = output.path("message").asText(output.path("task_metrics").toString());
+                if (isNoValidFragmentFailure(message)) {
+                    throw new NonRetryableTaskException(buildNoValidFragmentMessage(message));
+                }
                 throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY,
                         "external transcription task failed, detail=" + sanitizeBody(message));
             }
@@ -147,6 +153,16 @@ public class ExternalMediaTranscriptionGateway implements MediaTranscriptionGate
         return output.path("transcription_url").asText("");
     }
 
+    private boolean isNoValidFragmentFailure(String message) {
+        return StringUtils.hasText(message) && message.contains(NO_VALID_FRAGMENT_CODE);
+    }
+
+    private String buildNoValidFragmentMessage(String detail) {
+        return "external transcription task failed: no valid speech fragment was recognized; "
+                + "音视频中未识别到有效语音片段，请上传包含清晰人声的音频或视频，detail="
+                + sanitizeBody(detail);
+    }
+
     private MediaTranscriptionResult readTranscriptionResult(String transcriptionUrl)
             throws IOException, InterruptedException {
         HttpRequest request = requestBuilder(transcriptionUrl)
@@ -155,6 +171,9 @@ public class ExternalMediaTranscriptionGateway implements MediaTranscriptionGate
         JsonNode root = sendForJson(request);
         String transcriptText = readTranscriptText(root);
         List<TranscriptSegment> segments = readSegments(root);
+        if (!StringUtils.hasText(transcriptText)) {
+            throw new NonRetryableTaskException(buildNoValidFragmentMessage("empty transcription text"));
+        }
         long duration = root.path("properties").path("original_duration_in_milliseconds").asLong(0L);
         if (duration <= 0 && !segments.isEmpty()) {
             duration = segments.get(segments.size() - 1).getEndMillis();

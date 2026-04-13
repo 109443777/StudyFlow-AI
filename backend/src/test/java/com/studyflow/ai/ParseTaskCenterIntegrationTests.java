@@ -18,6 +18,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.studyflow.ai.common.exception.NonRetryableTaskException;
 import com.studyflow.ai.common.auth.JwtTokenProvider;
 import com.studyflow.ai.entity.Material;
 import com.studyflow.ai.entity.ParseTask;
@@ -220,6 +221,33 @@ class ParseTaskCenterIntegrationTests {
         org.junit.jupiter.api.Assertions.assertEquals(MaterialParseStatusEnum.FAILED.name(),
                 materialMapper.selectById(materialId).getParseStatus());
         verify(parseTaskMessagePublisher, times(2)).publish(any(), eq(ParseTaskTypeEnum.TEXT_PARSE));
+    }
+
+    @Test
+    void shouldFailImmediatelyForNonRetryableTaskFailure() throws Exception {
+        long materialId = uploadMaterial("silent-video.mp4", "video".getBytes());
+        ParseTask initialTask = parseTaskMapper.selectOne(Wrappers.<ParseTask>lambdaQuery()
+                .eq(ParseTask::getMaterialId, materialId)
+                .eq(ParseTask::getTaskType, ParseTaskTypeEnum.VIDEO_TRANSCRIBE.name())
+                .last("limit 1"));
+
+        reset(parseTaskMessagePublisher, materialTaskExecutionService);
+        doNothing().when(parseTaskMessagePublisher).publish(any(), any());
+        doThrow(new NonRetryableTaskException("external transcription task failed: no valid speech fragment"))
+                .when(materialTaskExecutionService)
+                .execute(any(Material.class), eq(ParseTaskTypeEnum.VIDEO_TRANSCRIBE));
+
+        parseTaskService.processTask(initialTask.getId());
+
+        ParseTask failedTask = parseTaskMapper.selectById(initialTask.getId());
+        org.junit.jupiter.api.Assertions.assertEquals(ParseTaskStatusEnum.FAILED.name(), failedTask.getStatus());
+        org.junit.jupiter.api.Assertions.assertEquals(1, failedTask.getRetryCount());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "external transcription task failed: no valid speech fragment",
+                failedTask.getFailReason());
+        org.junit.jupiter.api.Assertions.assertEquals(MaterialParseStatusEnum.FAILED.name(),
+                materialMapper.selectById(materialId).getParseStatus());
+        verify(parseTaskMessagePublisher, times(0)).publish(any(), eq(ParseTaskTypeEnum.VIDEO_TRANSCRIBE));
     }
 
     private long uploadMaterial(String fileName, byte[] content) throws Exception {

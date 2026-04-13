@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.studyflow.ai.common.exception.BusinessException;
+import com.studyflow.ai.common.exception.NonRetryableTaskException;
 import com.studyflow.ai.config.TranscriptionProperties;
 import com.studyflow.ai.enums.MediaTypeEnum;
 import com.studyflow.ai.gateway.DashScopeTemporaryFileUploader;
@@ -80,6 +81,28 @@ class ExternalMediaTranscriptionGatewayTests {
             assertEquals("Bearer dashscope-key", server.getAuthorizationHeader());
             assertEquals("enable", server.getAsyncHeader());
             assertEquals(true, server.getSubmitBody().contains("\"file_urls\":[\"http://storage.example.com/lecture.wav\"]"));
+        }
+    }
+
+    @Test
+    void shouldTreatDashScopeNoValidFragmentAsNonRetryableFailure() throws Exception {
+        try (FakeAliyunTranscriptionServer server = FakeAliyunTranscriptionServer.start()) {
+            server.setTaskResponse("""
+                    {"output":{"task_id":"task-001","task_status":"FAILED","message":"SUCCESS_WITH_NO_VALID_FRAGMENT"}}
+                    """);
+            TranscriptionProperties properties = testProperties(server);
+
+            NonRetryableTaskException exception = assertThrows(NonRetryableTaskException.class,
+                    () -> new ExternalMediaTranscriptionGateway(properties)
+                            .transcribe(MediaTranscriptionRequest.builder()
+                                    .materialId(1L)
+                                    .fileName("silent.mp3")
+                                    .fileType("mp3")
+                                    .mediaType(MediaTypeEnum.AUDIO)
+                                    .fileUrl("http://storage.example.com/silent.mp3")
+                                    .build()));
+
+            assertTrue(exception.getMessage().contains("no valid speech fragment"));
         }
     }
 
@@ -177,8 +200,13 @@ class ExternalMediaTranscriptionGatewayTests {
 
         private volatile String policyPath;
 
+        private volatile String taskResponse;
+
         private FakeAliyunTranscriptionServer(HttpServer httpServer) {
             this.httpServer = httpServer;
+            this.taskResponse = """
+                    {"output":{"task_id":"task-001","task_status":"SUCCEEDED","results":[{"file_url":"http://storage.example.com/lecture.wav","transcription_url":"%s/transcriptions/result.json","subtask_status":"SUCCEEDED"}]}}
+                    """.formatted("http://localhost:" + httpServer.getAddress().getPort());
         }
 
         static FakeAliyunTranscriptionServer start() throws IOException {
@@ -225,6 +253,10 @@ class ExternalMediaTranscriptionGatewayTests {
             return policyPath;
         }
 
+        void setTaskResponse(String taskResponse) {
+            this.taskResponse = taskResponse;
+        }
+
         @Override
         public void close() {
             httpServer.stop(0);
@@ -241,9 +273,7 @@ class ExternalMediaTranscriptionGatewayTests {
         }
 
         private void handleTask(HttpExchange exchange) throws IOException {
-            writeJson(exchange, """
-                    {"output":{"task_id":"task-001","task_status":"SUCCEEDED","results":[{"file_url":"http://storage.example.com/lecture.wav","transcription_url":"%s/transcriptions/result.json","subtask_status":"SUCCEEDED"}]}}
-                    """.formatted("http://localhost:" + httpServer.getAddress().getPort()));
+            writeJson(exchange, taskResponse);
         }
 
         private void handleUploadPolicy(HttpExchange exchange) throws IOException {
