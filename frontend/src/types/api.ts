@@ -71,7 +71,7 @@ export interface MultipartInitRequest {
 export interface MultipartInitVO {
   uploadId: Id
   materialId: Id
-  partSize: number
+  partSize: number | string
   totalParts: number
   status: string
 }

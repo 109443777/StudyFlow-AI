@@ -10,7 +10,7 @@ import LoadingBlock from '@/components/LoadingBlock.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import type { MaterialVO, ParseTaskVO } from '@/types/api'
 import { buildMaterialStage } from '@/utils/materialStatus'
-import { calculateUploadedPercentage, buildMultipartPlan, createFileFingerprint } from '@/utils/multipartUpload'
+import { buildMultipartPlan, calculateUploadedPercentage, createFileFingerprint } from '@/utils/multipartUpload'
 import { getDisplayError } from '@/utils/result'
 
 type MultipartStatus = 'IDLE' | 'INIT' | 'UPLOADING' | 'COMPLETING' | 'FAILED' | 'SUCCESS' | 'ABORTED'
@@ -54,7 +54,7 @@ const multipartState = reactive<MultipartState>({
   error: '',
 })
 
-const isUploading = computed(() => multipartState.status === 'INIT' || multipartState.status === 'UPLOADING' || multipartState.status === 'COMPLETING')
+const isUploading = computed(() => ['INIT', 'UPLOADING', 'COMPLETING'].includes(multipartState.status))
 const canResume = computed(() => multipartState.status === 'FAILED' && !!selectedFile.value && !!multipartState.uploadId)
 const canAbort = computed(() => isUploading.value && !!multipartState.uploadId)
 
@@ -115,7 +115,8 @@ async function loadMaterials() {
   loading.value = true
   pageError.value = ''
   try {
-    materials.value = await studyflowApi.listMaterials()
+    const allMaterials = await studyflowApi.listMaterials()
+    materials.value = allMaterials.filter((item) => item.uploadStatus !== 'FAILED')
     await Promise.all(
       materials.value.slice(0, 8).map(async (item) => {
         tasksByMaterial.value[item.id] = await studyflowApi.listParseTasks(item.id)
@@ -142,8 +143,8 @@ async function prepareMultipartSession(file: File) {
   multipartState.materialId = init.materialId
   multipartState.fileName = file.name
   multipartState.fileSize = file.size
-  multipartState.partSize = init.partSize
-  multipartState.totalParts = init.totalParts
+  multipartState.partSize = Number(init.partSize)
+  multipartState.totalParts = Number(init.totalParts)
   multipartState.status = 'INIT'
 }
 
@@ -156,13 +157,13 @@ async function uploadRemainingParts(file: File) {
   multipartState.status = 'UPLOADING'
   const uploaded = await studyflowApi.listUploadedParts(multipartState.uploadId)
   const uploadedPartNumbers = new Set(uploaded.uploadedParts.map((item) => item.partNumber))
-  multipartState.uploadedParts = uploaded.uploadedPartCount
-  multipartState.percentage = calculateUploadedPercentage(uploaded.uploadedPartCount, multipartState.totalParts)
+  multipartState.uploadedParts = Number(uploaded.uploadedPartCount)
+  multipartState.percentage = calculateUploadedPercentage(multipartState.uploadedParts, multipartState.totalParts)
 
   const plan = buildMultipartPlan(file.size, multipartState.partSize)
   for (const part of plan) {
     if (abortRequested.value) {
-      return
+      return false
     }
     if (uploadedPartNumbers.has(part.partNumber)) {
       continue
@@ -189,7 +190,7 @@ async function uploadRemainingParts(file: File) {
       multipartState.currentPartProgress = 100
     } catch (error) {
       if (abortRequested.value) {
-        return
+        return false
       }
       multipartState.status = 'FAILED'
       multipartState.error = getDisplayError(error)
@@ -200,16 +201,23 @@ async function uploadRemainingParts(file: File) {
   }
 
   if (abortRequested.value) {
-    return
+    return false
   }
 
-  multipartState.status = 'COMPLETING'
-  const material = await studyflowApi.completeMultipartUpload(multipartState.uploadId)
-  multipartState.status = 'SUCCESS'
-  multipartState.percentage = 100
-  materials.value = [material, ...materials.value.filter((item) => item.id !== material.id)]
-  await refreshMaterialTask(material.id)
-  ElMessage.success('分片上传完成，资料已进入异步解析流程')
+  try {
+    multipartState.status = 'COMPLETING'
+    const material = await studyflowApi.completeMultipartUpload(multipartState.uploadId)
+    multipartState.status = 'SUCCESS'
+    multipartState.percentage = 100
+    materials.value = [material, ...materials.value.filter((item) => item.id !== material.id && item.uploadStatus !== 'FAILED')]
+    await refreshMaterialTask(material.id)
+    ElMessage.success('分片上传完成，资料已进入异步解析流程')
+    return true
+  } catch (error) {
+    multipartState.status = 'FAILED'
+    multipartState.error = getDisplayError(error)
+    throw error
+  }
 }
 
 async function startMultipartUpload(file: File) {
@@ -217,14 +225,16 @@ async function startMultipartUpload(file: File) {
   resetMultipartState()
   multipartState.fileName = file.name
   multipartState.fileSize = file.size
-  await uploadRemainingParts(file)
+  return uploadRemainingParts(file)
 }
 
 async function handleUpload(options: UploadRequestOptions) {
   const file = options.file as File
   try {
-    await startMultipartUpload(file)
-    options.onSuccess?.({ uploadId: multipartState.uploadId })
+    const completed = await startMultipartUpload(file)
+    if (completed) {
+      options.onSuccess?.({ uploadId: multipartState.uploadId })
+    }
   } catch (error) {
     const message = getDisplayError(error)
     const uploadError = new Error(message) as Parameters<NonNullable<typeof options.onError>>[0]
@@ -256,6 +266,7 @@ async function abortMultipartUpload() {
     await studyflowApi.abortMultipartUpload(multipartState.uploadId)
     multipartState.status = 'ABORTED'
     multipartState.error = ''
+    materials.value = materials.value.filter((item) => item.id !== multipartState.materialId && item.uploadStatus !== 'FAILED')
     ElMessage.info('已取消当前分片上传任务')
   } catch (error) {
     multipartState.status = 'FAILED'

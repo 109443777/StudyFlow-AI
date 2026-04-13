@@ -11,6 +11,14 @@ export interface MaterialStage {
 export function buildMaterialStage(material: MaterialVO, tasks: ParseTaskVO[] = []): MaterialStage {
   const latestTask = tasks[0]
 
+  if (material.uploadStatus === 'FAILED') {
+    return {
+      label: '上传未完成',
+      detail: '该资料上传已取消或失败，不会进入解析队列。请重新上传完整文件。',
+      tone: 'error',
+    }
+  }
+
   if (material.parseStatus === 'SUCCESS') {
     return {
       label: '解析完成',

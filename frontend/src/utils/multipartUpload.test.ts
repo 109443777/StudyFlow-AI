@@ -12,6 +12,10 @@ describe('multipartUpload utilities', () => {
     ])
   })
 
+  it('normalizes string part size returned by backend Long serialization', () => {
+    expect(buildMultipartPlan(74_137_795, '8388608')).toHaveLength(9)
+  })
+
   it('calculates uploaded percentage from completed parts', () => {
     expect(calculateUploadedPercentage(2, 4)).toBe(50)
     expect(calculateUploadedPercentage(5, 4)).toBe(100)

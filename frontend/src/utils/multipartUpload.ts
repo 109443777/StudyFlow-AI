@@ -4,17 +4,19 @@ export interface MultipartPartPlan {
   end: number
 }
 
-export function buildMultipartPlan(fileSize: number, partSize: number): MultipartPartPlan[] {
-  if (fileSize <= 0 || partSize <= 0) {
+export function buildMultipartPlan(fileSize: number | string, partSize: number | string): MultipartPartPlan[] {
+  const normalizedFileSize = Number(fileSize)
+  const normalizedPartSize = Number(partSize)
+  if (normalizedFileSize <= 0 || normalizedPartSize <= 0 || !Number.isFinite(normalizedFileSize) || !Number.isFinite(normalizedPartSize)) {
     return []
   }
   const plan: MultipartPartPlan[] = []
   let partNumber = 1
-  for (let start = 0; start < fileSize; start += partSize) {
+  for (let start = 0; start < normalizedFileSize; start += normalizedPartSize) {
     plan.push({
       partNumber,
       start,
-      end: Math.min(fileSize, start + partSize),
+      end: Math.min(normalizedFileSize, start + normalizedPartSize),
     })
     partNumber += 1
   }

@@ -45,6 +45,14 @@ describe('materialStatus', () => {
     expect(stage.tone).toBe('warning')
   })
 
+  it('shows upload failure before waiting parse state', () => {
+    const stage = buildMaterialStage(material({ uploadStatus: 'FAILED', parseStatus: 'INIT' }), [])
+
+    expect(stage.label).toBe('上传未完成')
+    expect(stage.detail).toContain('不会进入解析队列')
+    expect(stage.tone).toBe('error')
+  })
+
   it('shows index building stage for embedding task', () => {
     const stage = buildMaterialStage(
       material({ parseStatus: 'PARSING', materialType: 'DOCUMENT' }),
