@@ -62,6 +62,43 @@ export interface ParseTaskVO {
   updateTime: string
 }
 
+export interface MultipartInitRequest {
+  fileName: string
+  fileSize: number
+  fileMd5: string
+}
+
+export interface MultipartInitVO {
+  uploadId: Id
+  materialId: Id
+  partSize: number
+  totalParts: number
+  status: string
+}
+
+export interface MultipartUploadPartVO {
+  uploadId: Id
+  partNumber: number
+  etag: string
+  uploadedPartCount: number
+  alreadyUploaded: boolean
+  completed: boolean
+}
+
+export interface UploadedPartVO {
+  partNumber: number
+  etag: string
+}
+
+export interface MultipartPartsVO {
+  uploadId: Id
+  totalParts: number
+  uploadedPartCount: number
+  uploadedParts: UploadedPartVO[]
+  status: string
+  completed: boolean
+}
+
 export interface MaterialContentVO {
   id: Id
   materialId: Id

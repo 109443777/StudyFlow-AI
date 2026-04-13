@@ -9,6 +9,10 @@ import type {
   MaterialContentVO,
   MaterialSummaryVO,
   MaterialVO,
+  MultipartInitRequest,
+  MultipartInitVO,
+  MultipartPartsVO,
+  MultipartUploadPartVO,
   ParseTaskVO,
   QaAnswerVO,
   QaMessageVO,
@@ -27,6 +31,35 @@ export const studyflowApi = {
   register: (data: RegisterRequest) => request.post<UserInfoVO>('/api/auth/register', data),
   login: (data: LoginRequest) => request.post<LoginVO>('/api/auth/login', data),
   me: () => request.get<UserInfoVO>('/api/users/me'),
+  initMultipartUpload: (data: MultipartInitRequest) =>
+    request.post<MultipartInitVO>('/api/material-uploads/init', data),
+  uploadMultipartPart: (
+    uploadId: string,
+    partNumber: number,
+    part: Blob,
+    options?: {
+      signal?: AbortSignal
+      onProgress?: (percentage: number) => void
+    },
+  ) => {
+    const form = new FormData()
+    form.append('uploadId', uploadId)
+    form.append('partNumber', String(partNumber))
+    form.append('part', new File([part], `part-${partNumber}.bin`, { type: part.type || 'application/octet-stream' }))
+    return request.post<MultipartUploadPartVO, FormData>('/api/material-uploads/part', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      signal: options?.signal,
+      onUploadProgress: (event) => {
+        if (!event.total || !options?.onProgress) {
+          return
+        }
+        options.onProgress(Math.round((event.loaded * 100) / event.total))
+      },
+    })
+  },
+  listUploadedParts: (uploadId: string) => request.get<MultipartPartsVO>(`/api/material-uploads/${uploadId}/parts`),
+  completeMultipartUpload: (uploadId: string) => request.post<MaterialVO>('/api/material-uploads/complete', { uploadId }),
+  abortMultipartUpload: (uploadId: string) => request.post<void>('/api/material-uploads/abort', { uploadId }),
   uploadMaterial: (file: File, onProgress?: (percentage: number) => void) => {
     const form = new FormData()
     form.append('file', file)
