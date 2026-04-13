@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.studyflow.ai.common.auth.UserContext;
 import com.studyflow.ai.common.exception.BusinessException;
 import com.studyflow.ai.common.util.MaterialFileSupport;
+import com.studyflow.ai.config.UploadProperties;
+import com.studyflow.ai.dto.AbortUploadDTO;
 import com.studyflow.ai.dto.CompleteUploadDTO;
 import com.studyflow.ai.dto.InitUploadDTO;
 import com.studyflow.ai.dto.UploadChunkDTO;
@@ -26,13 +28,14 @@ import com.studyflow.ai.vo.ChunkUploadVO;
 import com.studyflow.ai.vo.InitUploadVO;
 import com.studyflow.ai.vo.MaterialVO;
 import com.studyflow.ai.vo.UploadedChunksVO;
+import com.studyflow.ai.vo.UploadedPartVO;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -58,6 +61,8 @@ public class UploadSessionServiceImpl implements UploadSessionService {
 
     private final UploadProgressCache uploadProgressCache;
 
+    private final UploadProperties uploadProperties;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public InitUploadVO initUpload(InitUploadDTO initUploadDTO) {
@@ -65,6 +70,8 @@ public class UploadSessionServiceImpl implements UploadSessionService {
         String fileName = initUploadDTO.getFileName();
         String extension = MaterialFileSupport.extractExtension(fileName);
         MaterialTypeEnum materialTypeEnum = MaterialFileSupport.resolveMaterialType(fileName);
+        long partSize = resolvePartSize(initUploadDTO.getFileSize());
+        int totalParts = Math.toIntExact((initUploadDTO.getFileSize() + partSize - 1) / partSize);
 
         Material material = new Material();
         material.setUserId(userId);
@@ -79,109 +86,115 @@ public class UploadSessionServiceImpl implements UploadSessionService {
         materialMapper.insert(material);
 
         String uploadId = UUID.randomUUID().toString().replace("-", "");
+        String storageUploadId = storageGateway.initMultipartUpload(material.getObjectKey(), resolveContentType(extension));
+
         UploadSession uploadSession = new UploadSession();
         uploadSession.setUploadId(uploadId);
+        uploadSession.setStorageUploadId(storageUploadId);
         uploadSession.setMaterialId(material.getId());
         uploadSession.setUserId(userId);
         uploadSession.setFileName(fileName);
         uploadSession.setFileType(extension);
         uploadSession.setFileSize(initUploadDTO.getFileSize());
         uploadSession.setFileMd5(initUploadDTO.getFileMd5().toLowerCase(Locale.ROOT));
-        uploadSession.setTotalChunks(initUploadDTO.getTotalChunks());
-        uploadSession.setUploadedChunks(0);
+        uploadSession.setPartSize(partSize);
+        uploadSession.setTotalParts(totalParts);
+        uploadSession.setUploadedParts(0);
         uploadSession.setObjectKey(material.getObjectKey());
         uploadSession.setMaterialType(materialTypeEnum.name());
         uploadSession.setStatus(UploadSessionStatusEnum.INIT.name());
         uploadSession.setSourceType(MaterialSourceTypeEnum.USER_UPLOAD.name());
+        uploadSession.setExpireTime(LocalDateTime.now().plusHours(uploadProperties.getSessionExpireHours()));
         uploadSessionMapper.insert(uploadSession);
 
         uploadProgressCache.initSession(
                 uploadId,
-                initUploadDTO.getTotalChunks(),
+                partSize,
+                totalParts,
                 uploadSession.getFileMd5(),
                 UploadSessionStatusEnum.INIT.name(),
                 material.getId(),
-                userId);
+                userId,
+                storageUploadId);
 
         return InitUploadVO.builder()
                 .uploadId(uploadId)
                 .materialId(material.getId())
-                .totalChunks(initUploadDTO.getTotalChunks())
-                .uploadedChunks(List.of())
+                .partSize(partSize)
+                .totalParts(totalParts)
                 .status(uploadSession.getStatus())
                 .build();
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public ChunkUploadVO uploadChunk(UploadChunkDTO uploadChunkDTO) {
+    public ChunkUploadVO uploadPart(UploadChunkDTO uploadChunkDTO) {
         Long userId = requireUserId();
         UploadSession uploadSession = getSession(uploadChunkDTO.getUploadId(), userId);
-        Integer chunkIndex = uploadChunkDTO.getChunkIndex();
-        if (chunkIndex < 0 || chunkIndex >= uploadSession.getTotalChunks()) {
-            throw new BusinessException(ResultCodeEnum.CHUNK_INDEX_INVALID);
+        Integer partNumber = uploadChunkDTO.getPartNumber();
+        if (partNumber < 1 || partNumber > uploadSession.getTotalParts()) {
+            throw new BusinessException(ResultCodeEnum.PART_NUMBER_INVALID);
         }
-        if (UploadSessionStatusEnum.COMPLETED.name().equals(uploadSession.getStatus())) {
+        ensureUploadSessionActive(uploadSession);
+
+        Optional<String> existingEtag = uploadProgressCache.getUploadedPartEtag(uploadSession.getUploadId(), partNumber);
+        if (existingEtag.isPresent()) {
             return ChunkUploadVO.builder()
                     .uploadId(uploadSession.getUploadId())
-                    .chunkIndex(chunkIndex)
-                    .uploadedChunkCount(uploadSession.getTotalChunks())
+                    .partNumber(partNumber)
+                    .etag(existingEtag.get())
+                    .uploadedPartCount(Math.max(uploadSession.getUploadedParts(), uploadProgressCache.getUploadedParts(uploadSession.getUploadId()).size()))
                     .alreadyUploaded(true)
-                    .completed(true)
+                    .completed(UploadSessionStatusEnum.COMPLETED.name().equals(uploadSession.getStatus()))
                     .build();
         }
-        if (uploadProgressCache.isChunkUploaded(uploadSession.getUploadId(), chunkIndex)) {
-            return ChunkUploadVO.builder()
-                    .uploadId(uploadSession.getUploadId())
-                    .chunkIndex(chunkIndex)
-                    .uploadedChunkCount(uploadSession.getUploadedChunks())
-                    .alreadyUploaded(true)
-                    .completed(false)
-                    .build();
-        }
-        MultipartFile chunk = uploadChunkDTO.getChunk();
-        if (chunk == null || chunk.isEmpty()) {
+
+        MultipartFile part = uploadChunkDTO.getPart();
+        if (part == null || part.isEmpty()) {
             throw new BusinessException(ResultCodeEnum.FILE_EMPTY);
         }
-        try (InputStream inputStream = chunk.getInputStream()) {
-            storageGateway.upload(
-                    MaterialFileSupport.buildChunkObjectKey(uploadSession.getUploadId(), chunkIndex),
+
+        try (InputStream inputStream = part.getInputStream()) {
+            String etag = storageGateway.uploadPart(
+                    uploadSession.getObjectKey(),
+                    uploadSession.getStorageUploadId(),
+                    partNumber,
                     inputStream,
-                    chunk.getSize(),
-                    chunk.getContentType());
+                    part.getSize(),
+                    part.getContentType());
+            Integer uploadedPartCount = uploadProgressCache.saveUploadedPart(uploadSession.getUploadId(), partNumber, etag);
+            uploadProgressCache.updateStatus(uploadSession.getUploadId(), UploadSessionStatusEnum.UPLOADING.name());
+            updateUploadSessionProgress(uploadSession.getId(), uploadedPartCount, UploadSessionStatusEnum.UPLOADING.name(), null);
+
+            return ChunkUploadVO.builder()
+                    .uploadId(uploadSession.getUploadId())
+                    .partNumber(partNumber)
+                    .etag(etag)
+                    .uploadedPartCount(uploadedPartCount)
+                    .alreadyUploaded(false)
+                    .completed(uploadedPartCount.equals(uploadSession.getTotalParts()))
+                    .build();
         } catch (IOException exception) {
-            throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "failed to read chunk file");
+            throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "failed to read upload part");
+        } catch (BusinessException exception) {
+            markUploadSessionFailed(uploadSession.getId(), uploadSession.getUploadId(), exception.getMessage());
+            throw exception;
+        } catch (Exception exception) {
+            markUploadSessionFailed(uploadSession.getId(), uploadSession.getUploadId(), "failed to upload multipart part");
+            throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "failed to upload multipart part");
         }
-        Integer uploadedChunkCount = uploadProgressCache.markChunkUploaded(uploadSession.getUploadId(), chunkIndex);
-        uploadProgressCache.updateStatus(uploadSession.getUploadId(), UploadSessionStatusEnum.UPLOADING.name());
-
-        UploadSession updateSession = new UploadSession();
-        updateSession.setId(uploadSession.getId());
-        updateSession.setUploadedChunks(uploadedChunkCount);
-        updateSession.setStatus(UploadSessionStatusEnum.UPLOADING.name());
-        uploadSessionMapper.updateById(updateSession);
-
-        return ChunkUploadVO.builder()
-                .uploadId(uploadSession.getUploadId())
-                .chunkIndex(chunkIndex)
-                .uploadedChunkCount(uploadedChunkCount)
-                .alreadyUploaded(false)
-                .completed(uploadedChunkCount.equals(uploadSession.getTotalChunks()))
-                .build();
     }
 
     @Override
-    public UploadedChunksVO checkUploadedChunks(String uploadId) {
+    public UploadedChunksVO listUploadedParts(String uploadId) {
         Long userId = requireUserId();
         UploadSession uploadSession = getSession(uploadId, userId);
-        List<Integer> uploadedChunks = UploadSessionStatusEnum.COMPLETED.name().equals(uploadSession.getStatus())
-                ? buildAllChunkIndexes(uploadSession.getTotalChunks())
-                : uploadProgressCache.getUploadedChunks(uploadId);
+        List<UploadedPartVO> uploadedParts = recoverUploadedParts(uploadSession);
         return UploadedChunksVO.builder()
                 .uploadId(uploadId)
-                .totalChunks(uploadSession.getTotalChunks())
-                .uploadedChunkCount(uploadedChunks.size())
-                .uploadedChunks(uploadedChunks)
+                .totalParts(uploadSession.getTotalParts())
+                .uploadedPartCount(uploadedParts.size())
+                .uploadedParts(uploadedParts)
                 .status(uploadSession.getStatus())
                 .completed(UploadSessionStatusEnum.COMPLETED.name().equals(uploadSession.getStatus()))
                 .build();
@@ -195,32 +208,15 @@ public class UploadSessionServiceImpl implements UploadSessionService {
         if (UploadSessionStatusEnum.COMPLETED.name().equals(uploadSession.getStatus())) {
             return materialService.getMaterialDetail(uploadSession.getMaterialId());
         }
-        List<Integer> uploadedChunks = uploadProgressCache.getUploadedChunks(uploadSession.getUploadId());
-        if (uploadedChunks.size() != uploadSession.getTotalChunks()) {
-            throw new BusinessException(ResultCodeEnum.UPLOAD_NOT_COMPLETE);
-        }
+        ensureUploadSessionActive(uploadSession);
 
-        Path tempFile = null;
+        List<UploadedPartVO> uploadedParts = recoverUploadedParts(uploadSession);
+        validateUploadedParts(uploadSession, uploadedParts);
+
         try {
-            tempFile = Files.createTempFile("studyflow-merge-", "." + uploadSession.getFileType());
-            try (OutputStream outputStream = Files.newOutputStream(tempFile)) {
-                for (int index = 0; index < uploadSession.getTotalChunks(); index++) {
-                    if (!uploadedChunks.contains(index)) {
-                        throw new BusinessException(ResultCodeEnum.UPLOAD_NOT_COMPLETE);
-                    }
-                    try (InputStream inputStream = storageGateway.download(MaterialFileSupport.buildChunkObjectKey(uploadSession.getUploadId(), index))) {
-                        inputStream.transferTo(outputStream);
-                    }
-                }
-            }
-
-            try (InputStream mergedStream = Files.newInputStream(tempFile)) {
-                storageGateway.upload(uploadSession.getObjectKey(), mergedStream, uploadSession.getFileSize(), resolveContentType(uploadSession.getFileType()));
-            }
-
-            for (int index = 0; index < uploadSession.getTotalChunks(); index++) {
-                storageGateway.delete(MaterialFileSupport.buildChunkObjectKey(uploadSession.getUploadId(), index));
-            }
+            updateUploadSessionProgress(uploadSession.getId(), uploadedParts.size(), UploadSessionStatusEnum.COMPLETING.name(), null);
+            uploadProgressCache.updateStatus(uploadSession.getUploadId(), UploadSessionStatusEnum.COMPLETING.name());
+            storageGateway.completeMultipartUpload(uploadSession.getObjectKey(), uploadSession.getStorageUploadId(), uploadedParts);
 
             Material material = new Material();
             material.setId(uploadSession.getMaterialId());
@@ -228,33 +224,74 @@ public class UploadSessionServiceImpl implements UploadSessionService {
             material.setParseStatus(MaterialParseStatusEnum.UPLOADED.name());
             materialMapper.updateById(material);
             material = materialMapper.selectById(uploadSession.getMaterialId());
-            log.info("Chunk upload completed and merged successfully, uploadId={}, materialId={}, totalChunks={}",
-                    uploadSession.getUploadId(), uploadSession.getMaterialId(), uploadSession.getTotalChunks());
+            log.info("Multipart upload completed successfully, uploadId={}, materialId={}, totalParts={}",
+                    uploadSession.getUploadId(), uploadSession.getMaterialId(), uploadSession.getTotalParts());
             parseTaskService.createAndDispatchInitialTask(material);
 
-            UploadSession updateSession = new UploadSession();
-            updateSession.setId(uploadSession.getId());
-            updateSession.setUploadedChunks(uploadSession.getTotalChunks());
-            updateSession.setStatus(UploadSessionStatusEnum.COMPLETED.name());
-            uploadSessionMapper.updateById(updateSession);
-            uploadProgressCache.updateStatus(uploadSession.getUploadId(), UploadSessionStatusEnum.COMPLETED.name());
+            updateUploadSessionProgress(uploadSession.getId(), uploadedParts.size(), UploadSessionStatusEnum.COMPLETED.name(), null);
+            uploadProgressCache.clear(uploadSession.getUploadId());
 
             return materialService.getMaterialDetail(uploadSession.getMaterialId());
-        } catch (IOException exception) {
-            markUploadSessionFailed(uploadSession.getId(), uploadSession.getUploadId());
-            throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "failed to merge upload chunks");
         } catch (BusinessException exception) {
+            markUploadSessionFailed(uploadSession.getId(), uploadSession.getUploadId(), exception.getMessage());
             throw exception;
         } catch (Exception exception) {
-            markUploadSessionFailed(uploadSession.getId(), uploadSession.getUploadId());
-            throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "failed to complete upload");
-        } finally {
-            if (tempFile != null) {
-                try {
-                    Files.deleteIfExists(tempFile);
-                } catch (IOException ignored) {
-                }
+            markUploadSessionFailed(uploadSession.getId(), uploadSession.getUploadId(), "failed to complete multipart upload");
+            throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "failed to complete multipart upload");
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void abortUpload(AbortUploadDTO abortUploadDTO) {
+        Long userId = requireUserId();
+        UploadSession uploadSession = getSession(abortUploadDTO.getUploadId(), userId);
+        if (UploadSessionStatusEnum.COMPLETED.name().equals(uploadSession.getStatus())
+                || UploadSessionStatusEnum.ABORTED.name().equals(uploadSession.getStatus())
+                || UploadSessionStatusEnum.EXPIRED.name().equals(uploadSession.getStatus())) {
+            return;
+        }
+        try {
+            storageGateway.abortMultipartUpload(uploadSession.getObjectKey(), uploadSession.getStorageUploadId());
+            updateUploadSessionProgress(uploadSession.getId(), uploadSession.getUploadedParts(), UploadSessionStatusEnum.ABORTED.name(), null);
+            uploadProgressCache.clear(uploadSession.getUploadId());
+
+            Material material = new Material();
+            material.setId(uploadSession.getMaterialId());
+            material.setUploadStatus(MaterialUploadStatusEnum.FAILED.name());
+            materialMapper.updateById(material);
+        } catch (BusinessException exception) {
+            markUploadSessionFailed(uploadSession.getId(), uploadSession.getUploadId(), exception.getMessage());
+            throw exception;
+        } catch (Exception exception) {
+            markUploadSessionFailed(uploadSession.getId(), uploadSession.getUploadId(), "failed to abort multipart upload");
+            throw new BusinessException(ResultCodeEnum.SYSTEM_BUSY, "failed to abort multipart upload");
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void abortExpiredUploads() {
+        List<UploadSession> expiredSessions = uploadSessionMapper.selectList(new LambdaQueryWrapper<UploadSession>()
+                .lt(UploadSession::getExpireTime, LocalDateTime.now())
+                .in(UploadSession::getStatus,
+                        UploadSessionStatusEnum.INIT.name(),
+                        UploadSessionStatusEnum.UPLOADING.name(),
+                        UploadSessionStatusEnum.COMPLETING.name()));
+        for (UploadSession uploadSession : expiredSessions) {
+            try {
+                storageGateway.abortMultipartUpload(uploadSession.getObjectKey(), uploadSession.getStorageUploadId());
+            } catch (Exception exception) {
+                log.warn("Failed to abort expired multipart upload on storage, uploadId={}, storageUploadId={}",
+                        uploadSession.getUploadId(), uploadSession.getStorageUploadId(), exception);
             }
+            updateUploadSessionProgress(uploadSession.getId(), uploadSession.getUploadedParts(), UploadSessionStatusEnum.EXPIRED.name(), "upload session expired");
+            uploadProgressCache.clear(uploadSession.getUploadId());
+
+            Material material = new Material();
+            material.setId(uploadSession.getMaterialId());
+            material.setUploadStatus(MaterialUploadStatusEnum.FAILED.name());
+            materialMapper.updateById(material);
         }
     }
 
@@ -277,18 +314,69 @@ public class UploadSessionServiceImpl implements UploadSessionService {
         return userId;
     }
 
-    private void markUploadSessionFailed(Long sessionId, String uploadId) {
-        UploadSession uploadSession = new UploadSession();
-        uploadSession.setId(sessionId);
-        uploadSession.setStatus(UploadSessionStatusEnum.FAILED.name());
-        uploadSessionMapper.updateById(uploadSession);
-        uploadProgressCache.updateStatus(uploadId, UploadSessionStatusEnum.FAILED.name());
+    private long resolvePartSize(Long fileSize) {
+        long configuredPartSize = Math.max(uploadProperties.getPartSizeBytes(), 5L * 1024 * 1024);
+        return Math.min(configuredPartSize, Math.max(fileSize, configuredPartSize));
     }
 
-    private List<Integer> buildAllChunkIndexes(Integer totalChunks) {
-        return java.util.stream.IntStream.range(0, totalChunks)
-                .boxed()
+    private void ensureUploadSessionActive(UploadSession uploadSession) {
+        if (UploadSessionStatusEnum.COMPLETED.name().equals(uploadSession.getStatus())) {
+            throw new BusinessException(ResultCodeEnum.CONFLICT, "upload session has already completed");
+        }
+        if (UploadSessionStatusEnum.ABORTED.name().equals(uploadSession.getStatus())) {
+            throw new BusinessException(ResultCodeEnum.CONFLICT, "upload session has been aborted");
+        }
+        if (UploadSessionStatusEnum.EXPIRED.name().equals(uploadSession.getStatus())) {
+            throw new BusinessException(ResultCodeEnum.CONFLICT, "upload session has expired");
+        }
+        if (UploadSessionStatusEnum.FAILED.name().equals(uploadSession.getStatus())) {
+            throw new BusinessException(ResultCodeEnum.CONFLICT, "upload session has failed");
+        }
+    }
+
+    private List<UploadedPartVO> recoverUploadedParts(UploadSession uploadSession) {
+        List<UploadedPartVO> cachedParts = uploadProgressCache.getUploadedParts(uploadSession.getUploadId());
+        if (!cachedParts.isEmpty()) {
+            return cachedParts.stream()
+                    .sorted(Comparator.comparing(UploadedPartVO::getPartNumber))
+                    .toList();
+        }
+        List<UploadedPartVO> storageParts = storageGateway.listUploadedParts(uploadSession.getObjectKey(), uploadSession.getStorageUploadId());
+        for (UploadedPartVO uploadedPart : storageParts) {
+            uploadProgressCache.saveUploadedPart(uploadSession.getUploadId(), uploadedPart.getPartNumber(), uploadedPart.getEtag());
+        }
+        return storageParts.stream()
+                .sorted(Comparator.comparing(UploadedPartVO::getPartNumber))
                 .toList();
+    }
+
+    private void validateUploadedParts(UploadSession uploadSession, List<UploadedPartVO> uploadedParts) {
+        if (uploadedParts.size() != uploadSession.getTotalParts()) {
+            throw new BusinessException(ResultCodeEnum.UPLOAD_NOT_COMPLETE);
+        }
+        for (int index = 0; index < uploadedParts.size(); index++) {
+            int expectedPartNumber = index + 1;
+            UploadedPartVO uploadedPart = uploadedParts.get(index);
+            if (uploadedPart.getPartNumber() == null
+                    || uploadedPart.getPartNumber() != expectedPartNumber
+                    || !StringUtils.hasText(uploadedPart.getEtag())) {
+                throw new BusinessException(ResultCodeEnum.UPLOAD_NOT_COMPLETE, "uploaded parts are incomplete");
+            }
+        }
+    }
+
+    private void updateUploadSessionProgress(Long sessionId, Integer uploadedPartCount, String status, String failReason) {
+        UploadSession uploadSession = new UploadSession();
+        uploadSession.setId(sessionId);
+        uploadSession.setUploadedParts(uploadedPartCount);
+        uploadSession.setStatus(status);
+        uploadSession.setFailReason(failReason);
+        uploadSessionMapper.updateById(uploadSession);
+    }
+
+    private void markUploadSessionFailed(Long sessionId, String uploadId, String failReason) {
+        updateUploadSessionProgress(sessionId, null, UploadSessionStatusEnum.FAILED.name(), failReason);
+        uploadProgressCache.updateStatus(uploadId, UploadSessionStatusEnum.FAILED.name());
     }
 
     private String resolveContentType(String extension) {

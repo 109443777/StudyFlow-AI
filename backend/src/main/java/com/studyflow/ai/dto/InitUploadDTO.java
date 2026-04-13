@@ -18,10 +18,6 @@ public class InitUploadDTO {
     @Min(value = 1, message = "fileSize must be greater than 0")
     private Long fileSize;
 
-    @NotNull(message = "totalChunks cannot be null")
-    @Min(value = 1, message = "totalChunks must be greater than 0")
-    private Integer totalChunks;
-
     @NotBlank(message = "fileMd5 cannot be blank")
     @Pattern(regexp = "^[a-fA-F0-9]{32}$", message = "fileMd5 must be 32 hex characters")
     private String fileMd5;

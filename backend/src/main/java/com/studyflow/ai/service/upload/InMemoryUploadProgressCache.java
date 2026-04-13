@@ -1,13 +1,12 @@
 package com.studyflow.ai.service.upload;
 
+import com.studyflow.ai.vo.UploadedPartVO;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentSkipListSet;
-import java.util.stream.Collectors;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
@@ -16,34 +15,42 @@ import org.springframework.stereotype.Component;
 @ConditionalOnMissingBean(StringRedisTemplate.class)
 public class InMemoryUploadProgressCache implements UploadProgressCache {
 
-    private final Map<String, Set<Integer>> uploadedChunksMap = new ConcurrentHashMap<>();
+    private final Map<String, Map<Integer, String>> uploadedPartsMap = new ConcurrentHashMap<>();
 
     @Override
-    public void initSession(String uploadId, Integer totalChunks, String fileMd5, String status, Long materialId, Long userId) {
-        uploadedChunksMap.computeIfAbsent(uploadId, key -> new ConcurrentSkipListSet<>());
+    public void initSession(String uploadId, Long partSize, Integer totalParts, String fileMd5, String status, Long materialId, Long userId, String storageUploadId) {
+        uploadedPartsMap.computeIfAbsent(uploadId, key -> new ConcurrentHashMap<>());
     }
 
     @Override
-    public boolean isChunkUploaded(String uploadId, Integer chunkIndex) {
-        return uploadedChunksMap.getOrDefault(uploadId, Set.of()).contains(chunkIndex);
+    public Optional<String> getUploadedPartEtag(String uploadId, Integer partNumber) {
+        return Optional.ofNullable(uploadedPartsMap.getOrDefault(uploadId, Map.of()).get(partNumber));
     }
 
     @Override
-    public Integer markChunkUploaded(String uploadId, Integer chunkIndex) {
-        Set<Integer> chunks = uploadedChunksMap.computeIfAbsent(uploadId, key -> new ConcurrentSkipListSet<>());
-        chunks.add(chunkIndex);
-        return chunks.size();
+    public Integer saveUploadedPart(String uploadId, Integer partNumber, String etag) {
+        Map<Integer, String> uploadedParts = uploadedPartsMap.computeIfAbsent(uploadId, key -> new ConcurrentHashMap<>());
+        uploadedParts.put(partNumber, etag);
+        return uploadedParts.size();
     }
 
     @Override
-    public List<Integer> getUploadedChunks(String uploadId) {
-        return uploadedChunksMap.getOrDefault(uploadId, Set.of())
-                .stream()
-                .sorted(Comparator.naturalOrder())
-                .collect(Collectors.toCollection(ArrayList::new));
+    public List<UploadedPartVO> getUploadedParts(String uploadId) {
+        return uploadedPartsMap.getOrDefault(uploadId, Map.of()).entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> UploadedPartVO.builder()
+                        .partNumber(entry.getKey())
+                        .etag(entry.getValue())
+                        .build())
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
     }
 
     @Override
     public void updateStatus(String uploadId, String status) {
+    }
+
+    @Override
+    public void clear(String uploadId) {
+        uploadedPartsMap.remove(uploadId);
     }
 }

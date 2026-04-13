@@ -74,6 +74,8 @@ studyflow:
     token-prefix: ${JWT_TOKEN_PREFIX:Bearer }
   upload:
     session-expire-hours: ${UPLOAD_SESSION_EXPIRE_HOURS:24}
+    part-size-bytes: ${UPLOAD_PART_SIZE_BYTES:8388608}
+    cleanup-interval-millis: ${UPLOAD_CLEANUP_INTERVAL_MILLIS:300000}
   minio:
     endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
     access-key: ${MINIO_ACCESS_KEY:studyflow}

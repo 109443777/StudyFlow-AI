@@ -12,10 +12,10 @@ public class UploadChunkDTO {
     @NotBlank(message = "uploadId cannot be blank")
     private String uploadId;
 
-    @NotNull(message = "chunkIndex cannot be null")
-    @Min(value = 0, message = "chunkIndex must be greater than or equal to 0")
-    private Integer chunkIndex;
+    @NotNull(message = "partNumber cannot be null")
+    @Min(value = 1, message = "partNumber must be greater than or equal to 1")
+    private Integer partNumber;
 
-    @NotNull(message = "chunk cannot be null")
-    private MultipartFile chunk;
+    @NotNull(message = "part cannot be null")
+    private MultipartFile part;
 }

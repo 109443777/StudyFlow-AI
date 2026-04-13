@@ -14,6 +14,7 @@ public enum ResultCodeEnum {
     UNSUPPORTED_FILE_TYPE(40003, "unsupported file type"),
     UPLOAD_NOT_COMPLETE(40004, "upload is not complete"),
     CHUNK_INDEX_INVALID(40005, "chunk index is invalid"),
+    PART_NUMBER_INVALID(40008, "part number is invalid"),
     VECTOR_INDEX_NOT_READY(40006, "vector index is not ready"),
     EXAM_DATE_INVALID(40007, "exam date is invalid"),
     UNAUTHORIZED(40100, "unauthorized"),

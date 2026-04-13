@@ -1,5 +1,6 @@
 package com.studyflow.ai.service;
 
+import com.studyflow.ai.dto.AbortUploadDTO;
 import com.studyflow.ai.dto.CompleteUploadDTO;
 import com.studyflow.ai.dto.InitUploadDTO;
 import com.studyflow.ai.dto.UploadChunkDTO;
@@ -12,9 +13,13 @@ public interface UploadSessionService {
 
     InitUploadVO initUpload(InitUploadDTO initUploadDTO);
 
-    ChunkUploadVO uploadChunk(UploadChunkDTO uploadChunkDTO);
+    ChunkUploadVO uploadPart(UploadChunkDTO uploadChunkDTO);
 
-    UploadedChunksVO checkUploadedChunks(String uploadId);
+    UploadedChunksVO listUploadedParts(String uploadId);
 
     MaterialVO completeUpload(CompleteUploadDTO completeUploadDTO);
+
+    void abortUpload(AbortUploadDTO abortUploadDTO);
+
+    void abortExpiredUploads();
 }

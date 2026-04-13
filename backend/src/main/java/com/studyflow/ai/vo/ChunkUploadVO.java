@@ -9,9 +9,11 @@ public class ChunkUploadVO {
 
     private String uploadId;
 
-    private Integer chunkIndex;
+    private Integer partNumber;
 
-    private Integer uploadedChunkCount;
+    private String etag;
+
+    private Integer uploadedPartCount;
 
     private Boolean alreadyUploaded;
 

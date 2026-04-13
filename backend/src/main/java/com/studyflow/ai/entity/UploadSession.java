@@ -1,6 +1,7 @@
 package com.studyflow.ai.entity;
 
 import com.baomidou.mybatisplus.annotation.TableName;
+import java.time.LocalDateTime;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -10,6 +11,8 @@ import lombok.EqualsAndHashCode;
 public class UploadSession extends BaseEntity {
 
     private String uploadId;
+
+    private String storageUploadId;
 
     private Long materialId;
 
@@ -23,9 +26,11 @@ public class UploadSession extends BaseEntity {
 
     private String fileMd5;
 
-    private Integer totalChunks;
+    private Long partSize;
 
-    private Integer uploadedChunks;
+    private Integer totalParts;
+
+    private Integer uploadedParts;
 
     private String objectKey;
 
@@ -34,4 +39,8 @@ public class UploadSession extends BaseEntity {
     private String status;
 
     private String sourceType;
+
+    private String failReason;
+
+    private LocalDateTime expireTime;
 }

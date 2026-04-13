@@ -8,4 +8,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class UploadProperties {
 
     private Long sessionExpireHours = 24L;
+
+    private Long partSizeBytes = 8L * 1024 * 1024;
+
+    private Long cleanupIntervalMillis = 300_000L;
 }

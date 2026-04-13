@@ -10,11 +10,11 @@ public class UploadedChunksVO {
 
     private String uploadId;
 
-    private Integer totalChunks;
+    private Integer totalParts;
 
-    private Integer uploadedChunkCount;
+    private Integer uploadedPartCount;
 
-    private List<Integer> uploadedChunks;
+    private List<UploadedPartVO> uploadedParts;
 
     private String status;
 

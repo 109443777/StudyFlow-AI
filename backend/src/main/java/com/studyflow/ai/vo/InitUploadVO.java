@@ -1,6 +1,5 @@
 package com.studyflow.ai.vo;
 
-import java.util.List;
 import lombok.Builder;
 import lombok.Data;
 
@@ -12,9 +11,9 @@ public class InitUploadVO {
 
     private Long materialId;
 
-    private Integer totalChunks;
+    private Long partSize;
 
-    private List<Integer> uploadedChunks;
+    private Integer totalParts;
 
     private String status;
 }
