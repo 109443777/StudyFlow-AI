@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS upload_session (
     file_type VARCHAR(32) NOT NULL,
     file_size BIGINT NOT NULL,
     file_md5 VARCHAR(32) NOT NULL,
+    file_sha256 VARCHAR(64) NOT NULL,
     part_size BIGINT NOT NULL,
     total_parts INT NOT NULL,
     uploaded_parts INT NOT NULL DEFAULT 0,

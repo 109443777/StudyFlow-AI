@@ -3,14 +3,17 @@ package com.studyflow.ai.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.studyflow.ai.common.auth.UserContext;
 import com.studyflow.ai.common.exception.BusinessException;
+import com.studyflow.ai.common.lock.FileAssetLockService;
 import com.studyflow.ai.common.util.MaterialFileSupport;
 import com.studyflow.ai.config.UploadProperties;
 import com.studyflow.ai.dto.AbortUploadDTO;
 import com.studyflow.ai.dto.CompleteUploadDTO;
 import com.studyflow.ai.dto.InitUploadDTO;
 import com.studyflow.ai.dto.UploadChunkDTO;
+import com.studyflow.ai.entity.FileAsset;
 import com.studyflow.ai.entity.Material;
 import com.studyflow.ai.entity.UploadSession;
+import com.studyflow.ai.enums.FileAssetStatusEnum;
 import com.studyflow.ai.enums.MaterialParseStatusEnum;
 import com.studyflow.ai.enums.MaterialSourceTypeEnum;
 import com.studyflow.ai.enums.MaterialTypeEnum;
@@ -18,6 +21,7 @@ import com.studyflow.ai.enums.MaterialUploadStatusEnum;
 import com.studyflow.ai.enums.ResultCodeEnum;
 import com.studyflow.ai.enums.UploadSessionStatusEnum;
 import com.studyflow.ai.gateway.StorageGateway;
+import com.studyflow.ai.mapper.FileAssetMapper;
 import com.studyflow.ai.mapper.MaterialMapper;
 import com.studyflow.ai.mapper.UploadSessionMapper;
 import com.studyflow.ai.service.MaterialService;
@@ -51,6 +55,8 @@ public class UploadSessionServiceImpl implements UploadSessionService {
 
     private final UploadSessionMapper uploadSessionMapper;
 
+    private final FileAssetMapper fileAssetMapper;
+
     private final MaterialMapper materialMapper;
 
     private final MaterialService materialService;
@@ -63,6 +69,8 @@ public class UploadSessionServiceImpl implements UploadSessionService {
 
     private final UploadProperties uploadProperties;
 
+    private final FileAssetLockService fileAssetLockService;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public InitUploadVO initUpload(InitUploadDTO initUploadDTO) {
@@ -70,15 +78,54 @@ public class UploadSessionServiceImpl implements UploadSessionService {
         String fileName = initUploadDTO.getFileName();
         String extension = MaterialFileSupport.extractExtension(fileName);
         MaterialTypeEnum materialTypeEnum = MaterialFileSupport.resolveMaterialType(fileName);
+        String fileSha256 = initUploadDTO.getFileSha256().toLowerCase(Locale.ROOT);
+        String lockKey = buildFileAssetLockKey(fileSha256, initUploadDTO.getFileSize());
+        return fileAssetLockService.executeWithLock(lockKey,
+                () -> initUploadWithFileAsset(userId, initUploadDTO, fileName, extension, materialTypeEnum, fileSha256));
+    }
+
+    private InitUploadVO initUploadWithFileAsset(
+            Long userId,
+            InitUploadDTO initUploadDTO,
+            String fileName,
+            String extension,
+            MaterialTypeEnum materialTypeEnum,
+            String fileSha256) {
+        FileAsset existingAsset = findFileAsset(fileSha256, initUploadDTO.getFileSize());
+        if (existingAsset != null && FileAssetStatusEnum.UPLOADED.name().equals(existingAsset.getAssetStatus())) {
+            Material material = createReusedMaterial(userId, fileName, extension, initUploadDTO.getFileSize(),
+                    materialTypeEnum, existingAsset);
+            return InitUploadVO.builder()
+                    .uploadId(null)
+                    .materialId(material.getId())
+                    .fileAssetId(existingAsset.getId())
+                    .fileSha256(fileSha256)
+                    .partSize(0L)
+                    .totalParts(0)
+                    .status(UploadSessionStatusEnum.COMPLETED.name())
+                    .uploadRequired(false)
+                    .assetReused(true)
+                    .build();
+        }
+        if (existingAsset != null && !FileAssetStatusEnum.FAILED.name().equals(existingAsset.getAssetStatus())) {
+            throw new BusinessException(ResultCodeEnum.CONFLICT, "same file asset is being uploaded, please retry later");
+        }
+
         long partSize = resolvePartSize(initUploadDTO.getFileSize());
         int totalParts = Math.toIntExact((initUploadDTO.getFileSize() + partSize - 1) / partSize);
 
+        FileAsset fileAsset = existingAsset == null
+                ? createFileAsset(fileName, extension, initUploadDTO.getFileSize(), materialTypeEnum, fileSha256)
+                : resetFailedFileAsset(existingAsset, fileName, extension, materialTypeEnum);
+
         Material material = new Material();
         material.setUserId(userId);
+        material.setFileAssetId(fileAsset.getId());
+        material.setFileSha256(fileSha256);
         material.setFileName(fileName);
         material.setFileType(extension);
         material.setFileSize(initUploadDTO.getFileSize());
-        material.setObjectKey(MaterialFileSupport.buildMaterialObjectKey(userId, extension));
+        material.setObjectKey(fileAsset.getObjectKey());
         material.setMaterialType(materialTypeEnum.name());
         material.setParseStatus(MaterialParseStatusEnum.INIT.name());
         material.setUploadStatus(MaterialUploadStatusEnum.INIT.name());
@@ -97,6 +144,7 @@ public class UploadSessionServiceImpl implements UploadSessionService {
         uploadSession.setFileType(extension);
         uploadSession.setFileSize(initUploadDTO.getFileSize());
         uploadSession.setFileMd5(initUploadDTO.getFileMd5().toLowerCase(Locale.ROOT));
+        uploadSession.setFileSha256(fileSha256);
         uploadSession.setPartSize(partSize);
         uploadSession.setTotalParts(totalParts);
         uploadSession.setUploadedParts(0);
@@ -120,9 +168,13 @@ public class UploadSessionServiceImpl implements UploadSessionService {
         return InitUploadVO.builder()
                 .uploadId(uploadId)
                 .materialId(material.getId())
+                .fileAssetId(fileAsset.getId())
+                .fileSha256(fileSha256)
                 .partSize(partSize)
                 .totalParts(totalParts)
                 .status(uploadSession.getStatus())
+                .uploadRequired(true)
+                .assetReused(false)
                 .build();
     }
 
@@ -224,6 +276,7 @@ public class UploadSessionServiceImpl implements UploadSessionService {
             material.setParseStatus(MaterialParseStatusEnum.UPLOADED.name());
             materialMapper.updateById(material);
             material = materialMapper.selectById(uploadSession.getMaterialId());
+            markFileAssetUploaded(material);
             log.info("Multipart upload completed successfully, uploadId={}, materialId={}, totalParts={}",
                     uploadSession.getUploadId(), uploadSession.getMaterialId(), uploadSession.getTotalParts());
             parseTaskService.createAndDispatchInitialTask(material);
@@ -260,6 +313,7 @@ public class UploadSessionServiceImpl implements UploadSessionService {
             material.setId(uploadSession.getMaterialId());
             material.setUploadStatus(MaterialUploadStatusEnum.FAILED.name());
             materialMapper.updateById(material);
+            markFileAssetFailed(uploadSession.getMaterialId());
         } catch (BusinessException exception) {
             markUploadSessionFailed(uploadSession.getId(), uploadSession.getUploadId(), exception.getMessage());
             throw exception;
@@ -292,6 +346,7 @@ public class UploadSessionServiceImpl implements UploadSessionService {
             material.setId(uploadSession.getMaterialId());
             material.setUploadStatus(MaterialUploadStatusEnum.FAILED.name());
             materialMapper.updateById(material);
+            markFileAssetFailed(uploadSession.getMaterialId());
         }
     }
 
@@ -377,6 +432,104 @@ public class UploadSessionServiceImpl implements UploadSessionService {
     private void markUploadSessionFailed(Long sessionId, String uploadId, String failReason) {
         updateUploadSessionProgress(sessionId, null, UploadSessionStatusEnum.FAILED.name(), failReason);
         uploadProgressCache.updateStatus(uploadId, UploadSessionStatusEnum.FAILED.name());
+        UploadSession uploadSession = uploadSessionMapper.selectById(sessionId);
+        if (uploadSession != null) {
+            markFileAssetFailed(uploadSession.getMaterialId());
+        }
+    }
+
+    private FileAsset findFileAsset(String fileSha256, Long fileSize) {
+        return fileAssetMapper.selectOne(new LambdaQueryWrapper<FileAsset>()
+                .eq(FileAsset::getFileSha256, fileSha256)
+                .eq(FileAsset::getFileSize, fileSize)
+                .last("limit 1"));
+    }
+
+    private FileAsset createFileAsset(
+            String fileName,
+            String extension,
+            Long fileSize,
+            MaterialTypeEnum materialTypeEnum,
+            String fileSha256) {
+        FileAsset fileAsset = new FileAsset();
+        fileAsset.setFileSha256(fileSha256);
+        fileAsset.setFileName(fileName);
+        fileAsset.setFileType(extension);
+        fileAsset.setFileSize(fileSize);
+        fileAsset.setObjectKey(MaterialFileSupport.buildFileAssetObjectKey(fileSha256, extension));
+        fileAsset.setMaterialType(materialTypeEnum.name());
+        fileAsset.setAssetStatus(FileAssetStatusEnum.UPLOADING.name());
+        fileAsset.setParseStatus(MaterialParseStatusEnum.INIT.name());
+        fileAssetMapper.insert(fileAsset);
+        return fileAsset;
+    }
+
+    private FileAsset resetFailedFileAsset(
+            FileAsset fileAsset,
+            String fileName,
+            String extension,
+            MaterialTypeEnum materialTypeEnum) {
+        fileAsset.setFileName(fileName);
+        fileAsset.setFileType(extension);
+        fileAsset.setObjectKey(MaterialFileSupport.buildFileAssetObjectKey(fileAsset.getFileSha256(), extension));
+        fileAsset.setMaterialType(materialTypeEnum.name());
+        fileAsset.setCanonicalMaterialId(null);
+        fileAsset.setAssetStatus(FileAssetStatusEnum.UPLOADING.name());
+        fileAsset.setParseStatus(MaterialParseStatusEnum.INIT.name());
+        fileAssetMapper.updateById(fileAsset);
+        return fileAssetMapper.selectById(fileAsset.getId());
+    }
+
+    private Material createReusedMaterial(
+            Long userId,
+            String fileName,
+            String extension,
+            Long fileSize,
+            MaterialTypeEnum materialTypeEnum,
+            FileAsset fileAsset) {
+        Material material = new Material();
+        material.setUserId(userId);
+        material.setFileAssetId(fileAsset.getId());
+        material.setReuseSourceMaterialId(fileAsset.getCanonicalMaterialId());
+        material.setFileSha256(fileAsset.getFileSha256());
+        material.setFileName(fileName);
+        material.setFileType(extension);
+        material.setFileSize(fileSize);
+        material.setObjectKey(fileAsset.getObjectKey());
+        material.setMaterialType(materialTypeEnum.name());
+        material.setParseStatus(fileAsset.getParseStatus());
+        material.setUploadStatus(MaterialUploadStatusEnum.SUCCESS.name());
+        material.setSourceType(MaterialSourceTypeEnum.USER_UPLOAD.name());
+        materialMapper.insert(material);
+        return material;
+    }
+
+    private void markFileAssetUploaded(Material material) {
+        if (material.getFileAssetId() == null) {
+            return;
+        }
+        FileAsset fileAsset = new FileAsset();
+        fileAsset.setId(material.getFileAssetId());
+        fileAsset.setCanonicalMaterialId(material.getId());
+        fileAsset.setAssetStatus(FileAssetStatusEnum.UPLOADED.name());
+        fileAsset.setParseStatus(MaterialParseStatusEnum.UPLOADED.name());
+        fileAssetMapper.updateById(fileAsset);
+    }
+
+    private void markFileAssetFailed(Long materialId) {
+        Material material = materialMapper.selectById(materialId);
+        if (material == null || material.getFileAssetId() == null) {
+            return;
+        }
+        FileAsset fileAsset = new FileAsset();
+        fileAsset.setId(material.getFileAssetId());
+        fileAsset.setAssetStatus(FileAssetStatusEnum.FAILED.name());
+        fileAsset.setParseStatus(MaterialParseStatusEnum.FAILED.name());
+        fileAssetMapper.updateById(fileAsset);
+    }
+
+    private String buildFileAssetLockKey(String fileSha256, Long fileSize) {
+        return "studyflow:lock:file_asset:" + fileSha256 + ":" + fileSize;
     }
 
     private String resolveContentType(String extension) {

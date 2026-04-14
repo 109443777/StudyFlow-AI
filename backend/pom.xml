@@ -27,6 +27,7 @@
         <jjwt.version>0.12.6</jjwt.version>
         <pdfbox.version>3.0.7</pdfbox.version>
         <poi.version>5.5.1</poi.version>
+        <redisson.version>3.32.0</redisson.version>
     </properties>
 
     <dependencies>
@@ -49,6 +50,11 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.redisson</groupId>
+            <artifactId>redisson</artifactId>
+            <version>${redisson.version}</version>
         </dependency>
         <dependency>
             <groupId>com.baomidou</groupId>

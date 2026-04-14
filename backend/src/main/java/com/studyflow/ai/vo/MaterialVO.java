@@ -12,6 +12,12 @@ public class MaterialVO {
 
     private Long userId;
 
+    private Long fileAssetId;
+
+    private Long reuseSourceMaterialId;
+
+    private String fileSha256;
+
     private String fileName;
 
     private String fileType;

@@ -35,6 +35,9 @@ export interface HealthCheckVO {
 export interface MaterialVO {
   id: Id
   userId: Id
+  fileAssetId?: Id
+  reuseSourceMaterialId?: Id
+  fileSha256?: string
   fileName: string
   fileType: string
   fileSize: string
@@ -66,14 +69,19 @@ export interface MultipartInitRequest {
   fileName: string
   fileSize: number
   fileMd5: string
+  fileSha256: string
 }
 
 export interface MultipartInitVO {
-  uploadId: Id
+  uploadId?: Id
   materialId: Id
+  fileAssetId?: Id
+  fileSha256?: string
   partSize: number | string
   totalParts: number
   status: string
+  uploadRequired?: boolean
+  assetReused?: boolean
 }
 
 export interface MultipartUploadPartVO {

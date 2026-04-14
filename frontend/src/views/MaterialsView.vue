@@ -10,7 +10,7 @@ import LoadingBlock from '@/components/LoadingBlock.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import type { MaterialVO, ParseTaskVO } from '@/types/api'
 import { buildMaterialStage } from '@/utils/materialStatus'
-import { buildMultipartPlan, calculateUploadedPercentage, createFileFingerprint } from '@/utils/multipartUpload'
+import { buildMultipartPlan, calculateUploadedPercentage, createFileFingerprint, createFileSha256 } from '@/utils/multipartUpload'
 import { getDisplayError } from '@/utils/result'
 
 type MultipartStatus = 'IDLE' | 'INIT' | 'UPLOADING' | 'COMPLETING' | 'FAILED' | 'SUCCESS' | 'ABORTED'
@@ -134,23 +134,39 @@ async function refreshMaterialTask(materialId: string) {
 }
 
 async function prepareMultipartSession(file: File) {
+  const fileSha256 = await createFileSha256(file)
   const init = await studyflowApi.initMultipartUpload({
     fileName: file.name,
     fileSize: file.size,
     fileMd5: createFileFingerprint(file),
+    fileSha256,
   })
-  multipartState.uploadId = init.uploadId
+  multipartState.uploadId = init.uploadId || ''
   multipartState.materialId = init.materialId
   multipartState.fileName = file.name
   multipartState.fileSize = file.size
   multipartState.partSize = Number(init.partSize)
   multipartState.totalParts = Number(init.totalParts)
+  if (init.uploadRequired === false) {
+    multipartState.uploadedParts = Number(init.totalParts)
+    multipartState.percentage = 100
+    multipartState.status = 'SUCCESS'
+    const material = await studyflowApi.getMaterial(init.materialId)
+    materials.value = [material, ...materials.value.filter((item) => item.id !== material.id && item.uploadStatus !== 'FAILED')]
+    await refreshMaterialTask(material.id)
+    ElMessage.success('检测到相同资料，已复用已有文件资产')
+    return false
+  }
   multipartState.status = 'INIT'
+  return true
 }
 
 async function uploadRemainingParts(file: File) {
   if (!multipartState.uploadId || !multipartState.partSize || !multipartState.totalParts) {
-    await prepareMultipartSession(file)
+    const shouldUpload = await prepareMultipartSession(file)
+    if (!shouldUpload) {
+      return true
+    }
   }
 
   multipartState.error = ''

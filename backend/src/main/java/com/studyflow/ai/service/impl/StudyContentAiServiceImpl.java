@@ -94,7 +94,11 @@ public class StudyContentAiServiceImpl implements StudyContentAiService {
         if (material == null) {
             throw new BusinessException(ResultCodeEnum.MATERIAL_NOT_FOUND);
         }
-        return analyzeAndSave(material);
+        if (material.getReuseSourceMaterialId() == null) {
+            return analyzeAndSave(material);
+        }
+        Material sourceMaterial = materialMapper.selectById(material.getReuseSourceMaterialId());
+        return analyzeAndSave(sourceMaterial == null ? material : sourceMaterial);
     }
 
     @Override
@@ -106,8 +110,11 @@ public class StudyContentAiServiceImpl implements StudyContentAiService {
         if (material == null) {
             throw new BusinessException(ResultCodeEnum.MATERIAL_NOT_FOUND);
         }
+        Long effectiveMaterialId = material.getReuseSourceMaterialId() == null
+                ? material.getId()
+                : material.getReuseSourceMaterialId();
         MaterialSummary materialSummary = materialSummaryMapper.selectOne(new LambdaQueryWrapper<MaterialSummary>()
-                .eq(MaterialSummary::getMaterialId, material.getId())
+                .eq(MaterialSummary::getMaterialId, effectiveMaterialId)
                 .last("limit 1"));
         if (materialSummary == null) {
             throw new BusinessException(ResultCodeEnum.MATERIAL_SUMMARY_NOT_FOUND);
@@ -115,7 +122,10 @@ public class StudyContentAiServiceImpl implements StudyContentAiService {
         if (shouldRefreshToChinese(materialSummary)) {
             log.info("Detected legacy non-Chinese summary, regenerate with Chinese prompts, materialId={}",
                     material.getId());
-            return analyzeAndSave(material);
+            Material effectiveMaterial = material.getReuseSourceMaterialId() == null
+                    ? material
+                    : materialMapper.selectById(material.getReuseSourceMaterialId());
+            return analyzeAndSave(effectiveMaterial == null ? material : effectiveMaterial);
         }
         return materialSummary;
     }

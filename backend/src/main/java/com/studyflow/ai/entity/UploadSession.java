@@ -26,6 +26,8 @@ public class UploadSession extends BaseEntity {
 
     private String fileMd5;
 
+    private String fileSha256;
+
     private Long partSize;
 
     private Integer totalParts;

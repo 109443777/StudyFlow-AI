@@ -11,9 +11,17 @@ public class InitUploadVO {
 
     private Long materialId;
 
+    private Long fileAssetId;
+
+    private String fileSha256;
+
     private Long partSize;
 
     private Integer totalParts;
 
     private String status;
+
+    private Boolean uploadRequired;
+
+    private Boolean assetReused;
 }

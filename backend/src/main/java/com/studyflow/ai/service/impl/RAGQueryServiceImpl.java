@@ -331,11 +331,14 @@ public class RAGQueryServiceImpl implements RAGQueryService {
             materialIds = List.of(qaSession.getMaterialId());
         }
         List<Material> materials = getOwnedMaterials(userId, materialIds);
-        Map<Long, Material> materialMap = materials.stream()
-                .collect(Collectors.toMap(Material::getId, Function.identity()));
+        Map<Long, Material> materialMap = buildReferenceMaterialMap(materials);
         Material primaryMaterial = materials.get(0);
         int topK = askQuestionDTO.getTopK() == null ? ragProperties.getTopK() : askQuestionDTO.getTopK();
-        List<ChunkSearchResult> searchResults = vectorStoreService.searchByMaterialIds(materialIds, askQuestionDTO.getQuestion(), topK);
+        List<Long> effectiveMaterialIds = materials.stream()
+                .map(this::effectiveMaterialId)
+                .distinct()
+                .toList();
+        List<ChunkSearchResult> searchResults = vectorStoreService.searchByMaterialIds(effectiveMaterialIds, askQuestionDTO.getQuestion(), topK);
         if (searchResults.isEmpty()) {
             throw new BusinessException(ResultCodeEnum.QA_CONTEXT_NOT_FOUND);
         }
@@ -359,6 +362,21 @@ public class RAGQueryServiceImpl implements RAGQueryService {
                 askQuestionDTO.getQuestion(),
                 qaSessionContextCache.recentHistory(qaSession.getId(), ragProperties.getHistorySize()));
         return new AskExecutionContext(qaSession, materialIds, primaryMaterial, topK, references, contexts, prompt);
+    }
+
+    private Map<Long, Material> buildReferenceMaterialMap(List<Material> materials) {
+        Map<Long, Material> materialMap = materials.stream()
+                .collect(Collectors.toMap(Material::getId, Function.identity()));
+        for (Material material : materials) {
+            if (material.getReuseSourceMaterialId() != null) {
+                materialMap.putIfAbsent(material.getReuseSourceMaterialId(), material);
+            }
+        }
+        return materialMap;
+    }
+
+    private Long effectiveMaterialId(Material material) {
+        return material.getReuseSourceMaterialId() == null ? material.getId() : material.getReuseSourceMaterialId();
     }
 
     private QaMessage persistQuestionMessage(Long userId, Material primaryMaterial, QaSession qaSession, AskQuestionDTO askQuestionDTO) {

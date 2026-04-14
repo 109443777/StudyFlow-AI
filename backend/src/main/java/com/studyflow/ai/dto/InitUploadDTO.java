@@ -21,4 +21,8 @@ public class InitUploadDTO {
     @NotBlank(message = "fileMd5 cannot be blank")
     @Pattern(regexp = "^[a-fA-F0-9]{32}$", message = "fileMd5 must be 32 hex characters")
     private String fileMd5;
+
+    @NotBlank(message = "fileSha256 cannot be blank")
+    @Pattern(regexp = "^[a-fA-F0-9]{64}$", message = "fileSha256 must be 64 hex characters")
+    private String fileSha256;
 }

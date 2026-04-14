@@ -1,20 +1,15 @@
 package com.studyflow.ai.entity;
 
-import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
-@TableName("material")
-public class Material extends BaseEntity {
+@TableName("file_asset")
+public class FileAsset extends BaseEntity {
 
-    private Long userId;
-
-    private Long fileAssetId;
-
-    private Long reuseSourceMaterialId;
+    private Long canonicalMaterialId;
 
     private String fileSha256;
 
@@ -28,12 +23,7 @@ public class Material extends BaseEntity {
 
     private String materialType;
 
+    private String assetStatus;
+
     private String parseStatus;
-
-    private String uploadStatus;
-
-    private String sourceType;
-
-    @TableField(exist = false)
-    private String fileUrl;
 }

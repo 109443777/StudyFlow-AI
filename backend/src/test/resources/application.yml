@@ -25,6 +25,7 @@ spring:
         - classpath:sql/011_study_plan.sql
         - classpath:sql/012_task_failure_record.sql
         - classpath:sql/013_qa_session_material.sql
+        - classpath:sql/014_file_asset.sql
 
 studyflow:
   jwt:

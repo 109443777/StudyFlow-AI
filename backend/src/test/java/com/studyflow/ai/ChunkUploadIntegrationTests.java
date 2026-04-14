@@ -19,11 +19,15 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyflow.ai.common.auth.JwtTokenProvider;
 import com.studyflow.ai.dto.AbortUploadDTO;
+import com.studyflow.ai.entity.FileAsset;
 import com.studyflow.ai.entity.User;
+import com.studyflow.ai.enums.FileAssetStatusEnum;
+import com.studyflow.ai.enums.MaterialParseStatusEnum;
 import com.studyflow.ai.enums.MaterialUploadStatusEnum;
 import com.studyflow.ai.enums.UploadSessionStatusEnum;
 import com.studyflow.ai.enums.UserStatusEnum;
 import com.studyflow.ai.gateway.StorageGateway;
+import com.studyflow.ai.mapper.FileAssetMapper;
 import com.studyflow.ai.mapper.MaterialMapper;
 import com.studyflow.ai.mapper.ParseTaskMapper;
 import com.studyflow.ai.mapper.UploadSessionMapper;
@@ -68,6 +72,9 @@ class ChunkUploadIntegrationTests {
     private MaterialMapper materialMapper;
 
     @Autowired
+    private FileAssetMapper fileAssetMapper;
+
+    @Autowired
     private ParseTaskMapper parseTaskMapper;
 
     @Autowired
@@ -101,6 +108,7 @@ class ChunkUploadIntegrationTests {
         parseTaskMapper.delete(Wrappers.emptyWrapper());
         uploadSessionMapper.delete(Wrappers.emptyWrapper());
         materialMapper.delete(Wrappers.emptyWrapper());
+        fileAssetMapper.delete(Wrappers.emptyWrapper());
         userMapper.delete(Wrappers.emptyWrapper());
 
         User user = new User();
@@ -179,7 +187,8 @@ class ChunkUploadIntegrationTests {
                 {
                   "fileName": "course-video.mp4",
                   "fileSize": 25165824,
-                  "fileMd5": "0123456789abcdef0123456789abcdef"
+                  "fileMd5": "0123456789abcdef0123456789abcdef",
+                  "fileSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
                 }
                 """;
 
@@ -249,7 +258,8 @@ class ChunkUploadIntegrationTests {
                 {
                   "fileName": "cancel-video.mp4",
                   "fileSize": 16777216,
-                  "fileMd5": "fedcba9876543210fedcba9876543210"
+                  "fileMd5": "fedcba9876543210fedcba9876543210",
+                  "fileSha256": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
                 }
                 """;
 
@@ -313,14 +323,75 @@ class ChunkUploadIntegrationTests {
         verify(storageGateway, times(1)).abortMultipartUpload(uploadSession.getObjectKey(), uploadSession.getStorageUploadId());
     }
 
+    @Test
+    void shouldReuseUploadedFileAssetBySha256AndSkipDuplicateMultipartUpload() throws Exception {
+        String fileSha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        String uploadId = initUpload("shared-video.mp4", 16777216, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", fileSha256);
+        uploadPart(uploadId, 1, "AAAA");
+        uploadPart(uploadId, 2, "BBBB");
+        mockMvc.perform(post("/api/material-uploads/complete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"uploadId\":\"" + uploadId + "\"}")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.fileSha256").value(fileSha256));
+
+        MvcResult reusedInitResult = mockMvc.perform(post("/api/material-uploads/init")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fileName": "same-video-copy.mp4",
+                                  "fileSize": 16777216,
+                                  "fileMd5": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                                  "fileSha256": "%s"
+                                }
+                                """.formatted(fileSha256))
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.uploadRequired").value(false))
+                .andExpect(jsonPath("$.data.assetReused").value(true))
+                .andExpect(jsonPath("$.data.fileSha256").value(fileSha256))
+                .andExpect(jsonPath("$.data.status").value("COMPLETED"))
+                .andReturn();
+
+        long reusedMaterialId = objectMapper.readTree(reusedInitResult.getResponse().getContentAsString())
+                .path("data")
+                .path("materialId")
+                .asLong();
+        Assertions.assertEquals(MaterialUploadStatusEnum.SUCCESS.name(),
+                materialMapper.selectById(reusedMaterialId).getUploadStatus());
+
+        List<FileAsset> fileAssets = fileAssetMapper.selectList(Wrappers.<FileAsset>lambdaQuery()
+                .eq(FileAsset::getFileSha256, fileSha256));
+        Assertions.assertEquals(1, fileAssets.size());
+        Assertions.assertEquals(FileAssetStatusEnum.UPLOADED.name(), fileAssets.get(0).getAssetStatus());
+
+        FileAsset parsedAsset = fileAssets.get(0);
+        parsedAsset.setParseStatus(MaterialParseStatusEnum.SUCCESS.name());
+        fileAssetMapper.updateById(parsedAsset);
+
+        mockMvc.perform(get("/api/materials/{materialId}", reusedMaterialId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.parseStatus").value(MaterialParseStatusEnum.SUCCESS.name()));
+
+        verify(storageGateway, times(1)).initMultipartUpload(anyString(), anyString());
+    }
+
     private String initUpload(String fileName, long fileSize, String fileMd5) throws Exception {
+        String fileSha256 = fileMd5 + fileMd5;
+        return initUpload(fileName, fileSize, fileMd5, fileSha256);
+    }
+
+    private String initUpload(String fileName, long fileSize, String fileMd5, String fileSha256) throws Exception {
         String initBody = """
                 {
                   "fileName": "%s",
                   "fileSize": %d,
-                  "fileMd5": "%s"
+                  "fileMd5": "%s",
+                  "fileSha256": "%s"
                 }
-                """.formatted(fileName, fileSize, fileMd5);
+                """.formatted(fileName, fileSize, fileMd5, fileSha256);
         MvcResult initResult = mockMvc.perform(post("/api/material-uploads/init")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(initBody)

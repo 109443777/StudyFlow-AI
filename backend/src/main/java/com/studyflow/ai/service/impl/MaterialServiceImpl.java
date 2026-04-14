@@ -5,6 +5,7 @@ import com.studyflow.ai.common.auth.UserContext;
 import com.studyflow.ai.common.exception.BusinessException;
 import com.studyflow.ai.dto.MaterialQueryDTO;
 import com.studyflow.ai.dto.MaterialUploadDTO;
+import com.studyflow.ai.entity.FileAsset;
 import com.studyflow.ai.entity.Material;
 import com.studyflow.ai.enums.MaterialParseStatusEnum;
 import com.studyflow.ai.enums.MaterialSourceTypeEnum;
@@ -12,6 +13,7 @@ import com.studyflow.ai.enums.MaterialTypeEnum;
 import com.studyflow.ai.enums.MaterialUploadStatusEnum;
 import com.studyflow.ai.enums.ResultCodeEnum;
 import com.studyflow.ai.gateway.StorageGateway;
+import com.studyflow.ai.mapper.FileAssetMapper;
 import com.studyflow.ai.mapper.MaterialMapper;
 import com.studyflow.ai.service.MaterialService;
 import com.studyflow.ai.service.ParseTaskService;
@@ -35,6 +37,8 @@ import org.springframework.web.multipart.MultipartFile;
 public class MaterialServiceImpl implements MaterialService {
 
     private final MaterialMapper materialMapper;
+
+    private final FileAssetMapper fileAssetMapper;
 
     private final StorageGateway storageGateway;
 
@@ -134,21 +138,36 @@ public class MaterialServiceImpl implements MaterialService {
     }
 
     private MaterialVO toMaterialVO(Material material) {
+        String parseStatus = resolveParseStatus(material);
         return MaterialVO.builder()
                 .id(material.getId())
                 .userId(material.getUserId())
+                .fileAssetId(material.getFileAssetId())
+                .reuseSourceMaterialId(material.getReuseSourceMaterialId())
+                .fileSha256(material.getFileSha256())
                 .fileName(material.getFileName())
                 .fileType(material.getFileType())
                 .fileSize(material.getFileSize())
                 .objectKey(material.getObjectKey())
                 .fileUrl(storageGateway.getFileUrl(material.getObjectKey()))
                 .materialType(material.getMaterialType())
-                .parseStatus(material.getParseStatus())
+                .parseStatus(parseStatus)
                 .uploadStatus(material.getUploadStatus())
                 .sourceType(material.getSourceType())
                 .createTime(material.getCreateTime())
                 .updateTime(material.getUpdateTime())
                 .build();
+    }
+
+    private String resolveParseStatus(Material material) {
+        if (material.getFileAssetId() == null) {
+            return material.getParseStatus();
+        }
+        FileAsset fileAsset = fileAssetMapper.selectById(material.getFileAssetId());
+        if (fileAsset != null && StringUtils.hasText(fileAsset.getParseStatus())) {
+            return fileAsset.getParseStatus();
+        }
+        return material.getParseStatus();
     }
 
     private String extractExtension(String fileName) {

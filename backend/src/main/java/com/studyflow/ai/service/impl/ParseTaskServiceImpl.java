@@ -6,6 +6,7 @@ import com.studyflow.ai.common.exception.BusinessException;
 import com.studyflow.ai.common.exception.NonRetryableTaskException;
 import com.studyflow.ai.dto.ParseTaskQueryDTO;
 import com.studyflow.ai.entity.Material;
+import com.studyflow.ai.entity.FileAsset;
 import com.studyflow.ai.entity.ParseTask;
 import com.studyflow.ai.enums.MaterialParseStatusEnum;
 import com.studyflow.ai.enums.MaterialTypeEnum;
@@ -13,6 +14,7 @@ import com.studyflow.ai.enums.ParseTaskStatusEnum;
 import com.studyflow.ai.enums.ParseTaskTypeEnum;
 import com.studyflow.ai.enums.ResultCodeEnum;
 import com.studyflow.ai.mapper.MaterialMapper;
+import com.studyflow.ai.mapper.FileAssetMapper;
 import com.studyflow.ai.mapper.ParseTaskMapper;
 import com.studyflow.ai.mq.DeadLetterMessagePublisher;
 import com.studyflow.ai.mq.DeadLetterTaskMessage;
@@ -41,6 +43,8 @@ public class ParseTaskServiceImpl implements ParseTaskService {
     private static final long PARSE_REQUEST_LOCK_SECONDS = 10L;
 
     private final ParseTaskMapper parseTaskMapper;
+
+    private final FileAssetMapper fileAssetMapper;
 
     private final MaterialMapper materialMapper;
 
@@ -326,6 +330,18 @@ public class ParseTaskServiceImpl implements ParseTaskService {
             material.setParseStatus(allSuccess ? MaterialParseStatusEnum.SUCCESS.name() : MaterialParseStatusEnum.PARSING.name());
         }
         materialMapper.updateById(material);
+        refreshFileAssetParseStatus(materialId, material.getParseStatus());
+    }
+
+    private void refreshFileAssetParseStatus(Long materialId, String parseStatus) {
+        Material material = materialMapper.selectById(materialId);
+        if (material == null || material.getFileAssetId() == null) {
+            return;
+        }
+        FileAsset fileAsset = new FileAsset();
+        fileAsset.setId(material.getFileAssetId());
+        fileAsset.setParseStatus(parseStatus);
+        fileAssetMapper.updateById(fileAsset);
     }
 
     private ParseTask findExistingTask(Long materialId, ParseTaskTypeEnum taskType) {

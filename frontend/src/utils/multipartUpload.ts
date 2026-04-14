@@ -37,3 +37,11 @@ export function createFileFingerprint(file: Pick<File, 'name' | 'size' | 'lastMo
     .join('')
   return (hex + '0'.repeat(32)).slice(0, 32)
 }
+
+export async function createFileSha256(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer()
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer)
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((item) => item.toString(16).padStart(2, '0'))
+    .join('')
+}

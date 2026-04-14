@@ -31,6 +31,10 @@ public final class MaterialFileSupport {
         return "materials/" + userId + "/" + UUID.randomUUID().toString().replace("-", "") + "." + extension;
     }
 
+    public static String buildFileAssetObjectKey(String fileSha256, String extension) {
+        return "file-assets/" + fileSha256.substring(0, 2) + "/" + fileSha256 + "." + extension;
+    }
+
     public static String buildChunkObjectKey(String uploadId, Integer chunkIndex) {
         return "upload-sessions/" + uploadId + "/chunks/" + chunkIndex + ".part";
     }

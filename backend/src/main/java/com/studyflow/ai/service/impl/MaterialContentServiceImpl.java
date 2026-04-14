@@ -82,8 +82,11 @@ public class MaterialContentServiceImpl implements MaterialContentService {
         if (material == null) {
             throw new BusinessException(ResultCodeEnum.MATERIAL_NOT_FOUND);
         }
+        Long effectiveMaterialId = material.getReuseSourceMaterialId() == null
+                ? material.getId()
+                : material.getReuseSourceMaterialId();
         MaterialContent materialContent = materialContentMapper.selectOne(new LambdaQueryWrapper<MaterialContent>()
-                .eq(MaterialContent::getMaterialId, material.getId())
+                .eq(MaterialContent::getMaterialId, effectiveMaterialId)
                 .last("limit 1"));
         if (materialContent == null) {
             throw new BusinessException(ResultCodeEnum.MATERIAL_CONTENT_NOT_FOUND);
