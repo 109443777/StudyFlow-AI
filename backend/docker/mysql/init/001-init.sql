@@ -14,6 +14,9 @@ CREATE UNIQUE INDEX uk_user_username ON user (username);
 CREATE TABLE IF NOT EXISTS material (
     id BIGINT PRIMARY KEY,
     user_id BIGINT NOT NULL,
+    file_asset_id BIGINT,
+    reuse_source_material_id BIGINT,
+    file_sha256 VARCHAR(64),
     file_name VARCHAR(255) NOT NULL,
     file_type VARCHAR(32) NOT NULL,
     file_size BIGINT NOT NULL,
@@ -27,7 +30,29 @@ CREATE TABLE IF NOT EXISTS material (
 );
 
 CREATE INDEX idx_material_user_id ON material (user_id);
+CREATE INDEX idx_material_file_asset_id ON material (file_asset_id);
+CREATE INDEX idx_material_reuse_source_material_id ON material (reuse_source_material_id);
+CREATE INDEX idx_material_file_sha256 ON material (file_sha256);
 CREATE INDEX idx_material_parse_status ON material (parse_status);
+
+CREATE TABLE IF NOT EXISTS file_asset (
+    id BIGINT PRIMARY KEY,
+    canonical_material_id BIGINT,
+    file_sha256 VARCHAR(64) NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    file_type VARCHAR(32) NOT NULL,
+    file_size BIGINT NOT NULL,
+    object_key VARCHAR(255) NOT NULL,
+    material_type VARCHAR(32) NOT NULL,
+    asset_status VARCHAR(32) NOT NULL,
+    parse_status VARCHAR(32) NOT NULL,
+    create_time TIMESTAMP NOT NULL,
+    update_time TIMESTAMP NOT NULL
+);
+
+CREATE UNIQUE INDEX uk_file_asset_sha256_size ON file_asset (file_sha256, file_size);
+CREATE INDEX idx_file_asset_canonical_material_id ON file_asset (canonical_material_id);
+CREATE INDEX idx_file_asset_parse_status ON file_asset (parse_status);
 
 CREATE TABLE IF NOT EXISTS upload_session (
     id BIGINT PRIMARY KEY,
@@ -39,6 +64,7 @@ CREATE TABLE IF NOT EXISTS upload_session (
     file_type VARCHAR(32) NOT NULL,
     file_size BIGINT NOT NULL,
     file_md5 VARCHAR(32) NOT NULL,
+    file_sha256 VARCHAR(64) NOT NULL,
     part_size BIGINT NOT NULL,
     total_parts INT NOT NULL,
     uploaded_parts INT NOT NULL DEFAULT 0,
@@ -154,6 +180,19 @@ CREATE TABLE IF NOT EXISTS qa_message (
 
 CREATE INDEX idx_qa_message_session_id ON qa_message (session_id);
 CREATE INDEX idx_qa_message_session_create_time ON qa_message (session_id, create_time);
+
+CREATE TABLE IF NOT EXISTS qa_session_material (
+    id BIGINT PRIMARY KEY,
+    session_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    material_id BIGINT NOT NULL,
+    create_time TIMESTAMP NOT NULL,
+    update_time TIMESTAMP NOT NULL,
+    UNIQUE KEY uk_qa_session_material (session_id, material_id),
+    KEY idx_qa_session_material_session_id (session_id),
+    KEY idx_qa_session_material_user_id (user_id),
+    KEY idx_qa_session_material_material_id (material_id)
+);
 
 CREATE TABLE IF NOT EXISTS study_plan (
     id BIGINT PRIMARY KEY,
